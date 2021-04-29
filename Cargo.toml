@@ -1,0 +1,13 @@
+[package]
+name = "generic-btree"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+slab = "*"
+cc-traits = { version = "^0.4", features = ["nightly", "slab"] }
+
+staticvec = "^0.10"
+
+[dev-dependencies]
+rand = { version = "^0.7", features = ["small_rng"] }
