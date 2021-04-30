@@ -187,15 +187,21 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 		}
 	}
 
-	// #[inline]
-	// pub fn children(&'a self) -> Children<S> {
-	// 	Children {
-	// 		inner: match &self.desc {
-	// 			Desc::Leaf(_) => None,
-	// 			Desc::Internal(node) => Some(node.children())
-	// 		}
-	// 	}
-	// }
+	#[inline]
+	pub fn children(&self) -> Children<S, I> {
+		match &self.desc {
+			Desc::Leaf(_) => Children::Leaf,
+			Desc::Internal(node) => Children::Internal(node.children())
+		}
+	}
+
+	#[inline]
+	pub fn separators(&self, i: usize) -> (Option<S::KeyRef<'a>>, Option<S::KeyRef<'a>>) {
+		match &self.desc {
+			Desc::Leaf(_) => (None, None),
+			Desc::Internal(node) => node.separators(i)
+		}
+	}
 
 	/// Returns the maximum capacity of this node.
 	/// 
@@ -264,7 +270,7 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 	}
 
 	#[cfg(debug_assertions)]
-	pub fn validate(&self, parent: Option<usize>, min: Option<&S::Key>, max: Option<&S::Key>) where S::Key: Ord {
+	pub fn validate(&self, parent: Option<usize>, min: Option<S::KeyRef<'_>>, max: Option<S::KeyRef<'_>>) where S::Key: Ord {
 		if self.parent() != parent {
 			panic!("wrong parent")
 		}
@@ -290,7 +296,7 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 
 		if let Some(min) = min {
 			if let Some(item) = self.first_item() {
-				if min >= &item.key() {
+				if min.deref() >= &item.key() {
 					panic!("item key is greater than right separator")
 				}
 			}
@@ -298,7 +304,7 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 
 		if let Some(max) = max {
 			if let Some(item) = self.last_item() {
-				if max <= &item.key() {
+				if max.deref() <= &item.key() {
 					panic!("item key is less than left separator")
 				}
 			}
@@ -486,6 +492,23 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 				node.append(separator, other)
 			},
 			_ => panic!("trying to append incompatible node")
+		}
+	}
+}
+
+pub enum Children<'b, S, I> {
+	Leaf,
+	Internal(internal::Children<'b, S, I>)
+}
+
+impl<'a, 'b, S: 'a + Storage, I: InternalRef<'a, S>> Iterator for Children<'b, S, I> {
+	type Item = usize;
+
+	#[inline]
+	fn next(&mut self) -> Option<usize> {
+		match self {
+			Children::Leaf => None,
+			Children::Internal(inner) => inner.next()
 		}
 	}
 }

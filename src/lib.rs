@@ -2,11 +2,11 @@
 #![feature(trait_alias)]
 
 mod util;
-mod btree;
-mod map;
+pub mod btree;
+pub mod map;
 
 /// Default Slab-backed implementation.
-mod slab;
+pub mod slab;
 
 pub use btree::{
 	Storage,

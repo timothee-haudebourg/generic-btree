@@ -520,6 +520,25 @@ impl<'a, S: StorageMut> DrainFilterInner<'a, S> {
 			}
 		}
 	}
+
+	#[inline]
+	pub fn next_consume<F>(&mut self, mut pred: F) -> Option<Item<S::Key, S::Value>> where F: FnMut(S::ItemMut<'_>) -> bool {
+		loop {
+			let remove = self.btree.item_mut(self.addr).map(|item| pred(item));
+
+			match remove {
+				Some(true) => {
+					let (item, next_addr) = self.btree.remove_at(self.addr).unwrap();
+					self.addr = next_addr;
+					return Some(item)
+				},
+				Some(false) => {
+					self.addr = self.btree.next_item_or_back_address(self.addr).unwrap();
+				},
+				None => return None
+			}
+		}
+	}
 }
 
 pub struct DrainFilter<'a, S: StorageMut, F> where F: FnMut(S::ItemMut<'_>) -> bool {

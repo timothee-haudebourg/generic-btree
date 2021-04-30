@@ -32,4 +32,8 @@ impl<'a, K, V, S: 'a + cc_traits::SlabMut<Node<K, V>>> btree::node::item::Mut<'a
 	fn into_value_mut(self) -> &'a mut V {
 		&mut self.value
 	}
+
+	fn into_pair_mut(self) -> (&'a mut K, &'a mut V) {
+		(&mut self.key, &mut self.value)
+	}
 }

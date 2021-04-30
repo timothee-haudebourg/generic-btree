@@ -19,6 +19,8 @@ pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> + Sized {
 	/// Returns the identifer of the parent node, if any.
 	fn parent(&self) -> Option<usize>;
 
+	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
+
 	/// Find the offset of the item matching the given key.
 	///
 	/// If the key matches no item in this node,
@@ -76,12 +78,29 @@ pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> + Sized {
 		None
 	}
 
-	fn children(&'a self) -> Children<'a, S, Self> {
+	fn children(&self) -> Children<S, Self> {
 		Children {
 			node: self,
 			index: 0,
 			storage: PhantomData
 		}
+	}
+
+	#[inline]
+	fn separators(&self, index: usize) -> (Option<S::KeyRef<'a>>, Option<S::KeyRef<'a>>) {
+		let min = if index > 0 {
+			self.item((index - 1).into()).map(|item| item.key())
+		} else {
+			None
+		};
+
+		let max = if index < self.child_count() {
+			self.item(index.into()).map(|item| item.key())
+		} else {
+			None
+		};
+
+		(min, max)
 	}
 
 	/// Returns the maximum capacity of this node.
@@ -115,19 +134,19 @@ pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> + Sized {
 	}
 }
 
-impl<'a, T, S: 'a + Storage> InternalRef<'a, S> for &'a mut T where &'a T: InternalRef<'a, S> {
-	fn parent(&self) -> Option<usize> {
-		self.parent()
-	}
+// impl<'a, T, S: 'a + Storage> InternalRef<'a, S> for &'a mut T where for<'b> &'b T: InternalRef<'b, S> {
+// 	fn parent(&self) -> Option<usize> {
+// 		self.parent()
+// 	}
 
-	fn child_id(&self, index: usize) -> Option<usize> {
-		self.child_id(index)
-	}
+// 	fn child_id(&self, index: usize) -> Option<usize> {
+// 		self.child_id(index)
+// 	}
 
-	fn max_capacity(&self) -> usize {
-		self.max_capacity()
-	}
-}
+// 	fn max_capacity(&self) -> usize {
+// 		self.max_capacity()
+// 	}
+// }
 
 pub trait InternalMut<'a, S: 'a + StorageMut>: InternalRef<'a, S> {
 	fn set_parent(&mut self, parent: Option<usize>);
@@ -196,13 +215,13 @@ pub trait InternalMut<'a, S: 'a + StorageMut>: InternalRef<'a, S> {
 	}
 }
 
-pub struct Children<'a, S: 'a + Storage, R: InternalRef<'a, S>> where S::Key: 'a, S::Value: 'a {
-	node: &'a R,
+pub struct Children<'b, S, R> {
+	node: &'b R,
 	index: usize,
 	storage: PhantomData<S>
 }
 
-impl<'a, S: 'a + Storage, R: InternalRef<'a, S>> Iterator for Children<'a, S, R> {
+impl<'a, 'b, S: 'a + Storage, R: InternalRef<'a, S>> Iterator for Children<'b, S, R> {
 	type Item = usize;
 
 	fn next(&mut self) -> Option<usize> {

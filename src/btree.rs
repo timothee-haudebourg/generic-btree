@@ -34,6 +34,7 @@ pub use iter::{
 	RangeMut,
 	DrainFilter
 };
+pub(crate) use iter::DrainFilterInner;
 pub use entry::{
 	Entry,
 	VacantEntry,
@@ -629,6 +630,43 @@ pub trait Storage: Sized {
 		for item in self.iter() {
 			item.key().deref().hash(h);
 			item.value().deref().hash(h);
+		}
+	}
+
+	#[cfg(debug_assertions)]
+	fn validate(&self) where Self::Key: Ord {
+		match self.root() {
+			Some(id) => {
+				self.validate_node(id, None, None, None);
+			},
+			None => ()
+		}
+	}
+
+	/// Validate the given node and returns the depth of the node.
+	#[cfg(debug_assertions)]
+	fn validate_node(&self, id: usize, parent: Option<usize>, min: Option<Self::KeyRef<'_>>, max: Option<Self::KeyRef<'_>>) -> usize where Self::Key: Ord {
+		let node = self.node(id).expect("missing node");
+		node.validate(parent, min, max);
+
+		let mut depth = None;
+		for (i, child_id) in node.children().enumerate() {
+			let (min, max) = node.separators(i);
+
+			let child_depth = self.validate_node(child_id, Some(id), min, max);
+			match depth {
+				None => depth = Some(child_depth),
+				Some(depth) => {
+					if depth != child_depth {
+						panic!("tree not balanced")
+					}
+				}
+			}
+		}
+
+		match depth {
+			Some(depth) => depth + 1,
+			None => 0
 		}
 	}
 }

@@ -5,7 +5,12 @@ use rand::{
 	rngs::SmallRng
 };
 use generic_btree::{
-	Map
+	Storage,
+	StorageMut,
+	btree::node::Item,
+	slab::{
+		Map
+	}
 };
 
 const SEED: &'static [u8; 16] = b"testseedtestseed";
@@ -18,7 +23,7 @@ pub fn insert() {
 		if let Some(_) = btree.insert(*key, *value) {
 			println!("duplicate: {}", key);
 		}
-		btree.validate();
+		btree.btree().validate();
 	}
 
 	assert!(btree.len() == 100);
@@ -26,33 +31,34 @@ pub fn insert() {
 
 #[test]
 pub fn remove() {
-	let mut btree: Map<usize, usize> = Map::new();
+	let mut map: Map<usize, usize> = Map::new();
 
 	let mut items = ITEMS;
 
 	for (key, value) in &items {
-		btree.insert(*key, *value);
+		map.insert(*key, *value);
 	}
 
 	let mut rng = SmallRng::from_seed(*SEED);
 	items.shuffle(&mut rng);
 
 	for (key, _) in &items {
-		btree.remove(&key);
-		btree.validate();
+		map.remove(&key);
+		map.btree().validate();
 	}
 
-	assert!(btree.is_empty())
+	assert!(map.is_empty())
 }
 
 #[test]
 pub fn item_addresses() {
-	let mut btree: BTreeMap<usize, usize> = BTreeMap::new();
+	let mut map: Map<usize, usize> = Map::new();
 
 	for (key, value) in &ITEMS {
-		btree.insert(*key, *value);
+		map.insert(*key, *value);
 	}
 
+	let btree = map.btree();
 	for (key, _) in &ITEMS {
 		let addr = btree.address_of(key).ok().unwrap();
 
@@ -105,12 +111,12 @@ pub fn item_addresses() {
 
 #[test]
 pub fn insert_addresses() {
-	let mut btree: BTreeMap<usize, usize> = BTreeMap::new();
+	let mut map: Map<usize, usize> = Map::new();
 
 	for (key, value) in &ITEMS {
-		let addr = btree.address_of(key).err().unwrap();
-		let new_addr = btree.insert_exactly_at(addr, Item::new(*key, *value), None);
-		assert_eq!(btree.item(new_addr).unwrap().value(), value);
+		let addr = map.btree().address_of(key).err().unwrap();
+		let new_addr = map.btree_mut().insert_exactly_at(addr, Item::new(*key, *value), None);
+		assert_eq!(&map.btree().item(new_addr).unwrap().value, value);
 	}
 }
 
@@ -119,15 +125,16 @@ pub fn remove_addresses() {
 	let items = ITEMS;
 
 	for k in 1..items.len() {
-		let mut btree: BTreeMap<usize, usize> = BTreeMap::new();
+		let mut map: Map<usize, usize> = Map::new();
 
 		for (key, value) in &items {
-			btree.insert(*key, *value);
-			if btree.len() == k {
+			map.insert(*key, *value);
+			if map.len() == k {
 				break;
 			}
 		}
 
+		let btree = map.btree_mut();
 		for (key, value) in &items {
 			match btree.address_of(key) {
 				Ok(addr) => {
@@ -143,16 +150,16 @@ pub fn remove_addresses() {
 
 #[test]
 pub fn update() {
-	let mut btree: BTreeMap<usize, usize> = BTreeMap::new();
+	let mut map: Map<usize, usize> = Map::new();
 
 	for (key, value) in &ITEMS {
 		if key % 2 == 0 {
-			btree.insert(*key, *value);
+			map.insert(*key, *value);
 		}
 	}
 
 	for (key, value) in &ITEMS {
-		btree.update(*key, |current_value| {
+		map.update(*key, |current_value| {
 			match current_value {
 				Some(current_value) => {
 					if current_value % 2 == 0 {
@@ -167,13 +174,13 @@ pub fn update() {
 			}
 		});
 
-		btree.validate();
+		map.btree().validate();
 	}
 
 	for (key, value) in &ITEMS {
 		let shoud_be_present = *key % 2 == 1 || *value % 2 == 1;
 
-		match btree.get(key) {
+		match map.get(key) {
 			Some(current_value) => {
 				if !shoud_be_present {
 					panic!("binding {}:{} should not be present", *key, *value);

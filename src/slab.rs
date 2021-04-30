@@ -16,6 +16,8 @@ pub mod node;
 pub use item::Item;
 pub use node::Node;
 
+pub type Map<K, V, S = Slab<Node<K, V>>> = crate::Map<Storage<K, V, S>>;
+
 const M: usize = 8;
 
 /// Slab storage.
@@ -24,6 +26,17 @@ pub struct Storage<K, V, S = Slab<Node<K, V>>> {
 	root: Option<usize>,
 	key: PhantomData<K>,
 	value: PhantomData<V>
+}
+
+impl<K, V, S: Default> Default for Storage<K, V, S> {
+	fn default() -> Self {
+		Self {
+			slab: S::default(),
+			root: None,
+			key: PhantomData,
+			value: PhantomData
+		}
+	}
 }
 
 impl<K, V, S: cc_traits::Slab<Node<K, V>>> btree::Storage for Storage<K, V, S> {

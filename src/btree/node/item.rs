@@ -1,5 +1,4 @@
 use std::ops::{
-	Deref,
 	DerefMut
 };
 use super::{
@@ -61,18 +60,18 @@ pub trait ItemAccess<'a, S: 'a + Storage> {
 		self.item_count() == 0
 	}
 
-	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
+	fn borrow_item(&self, offset: Offset) -> Option<S::ItemRef<'_>>;
 }
 
-impl<'a, T, S: 'a + Storage> ItemAccess<'a, S> for &'a mut T where &'a T: ItemAccess<'a, S> {
-	fn item_count(&self) -> usize {
-		self.item_count()
-	}
+// impl<'a, T, S: 'a + Storage> ItemAccess<'a, S> for &'a mut T where for<'b> &'b T: ItemAccess<'b, S> {
+// 	fn item_count(&self) -> usize {
+// 		self.item_count()
+// 	}
 
-	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>> {
-		self.item(offset)
-	}
-}
+// 	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>> {
+// 		self.item(offset)
+// 	}
+// }
 
 /// Item reference.
 pub trait Ref<'a, S: 'a + Storage> {
@@ -83,7 +82,7 @@ pub trait Ref<'a, S: 'a + Storage> {
 	fn value(&self) -> S::ValueRef<'a>;
 
 	#[inline]
-	fn split(&self) -> (S::KeyRef<'a>, S::ValueRef<'a>) {
+	fn as_pair(&self) -> (S::KeyRef<'a>, S::ValueRef<'a>) {
 		(self.key(), self.value())
 	}
 }
@@ -99,7 +98,18 @@ impl<'a, T, S: 'a + Storage> Ref<'a, S> for &'a mut T where &'a T: Ref<'a, S> {
 }
 
 /// Item reference.
-pub trait Mut<'a, S: 'a + StorageMut>: Ref<'a, S> {
+pub trait Mut<'a, S: 'a + StorageMut> {
+	/// Returns a reference to the item key.
+	fn key(&self) -> S::KeyRef<'a>;
+
+	/// Returns a refrence to the item value.
+	fn value(&self) -> S::ValueRef<'a>;
+
+	#[inline]
+	fn as_pair(&self) -> (S::KeyRef<'a>, S::ValueRef<'a>) {
+		(self.key(), self.value())
+	}
+
 	/// Returns a mutable reference to the item key.
 	fn key_mut(&mut self) -> S::KeyMut<'_>;
 
@@ -113,6 +123,8 @@ pub trait Mut<'a, S: 'a + StorageMut>: Ref<'a, S> {
 	fn value_mut(&mut self) -> S::ValueMut<'_>;
 
 	fn into_value_mut(self) -> S::ValueMut<'a>;
+
+	fn into_pair_mut(self) -> (S::KeyMut<'a>, S::ValueMut<'a>);
 
 	fn swap(&mut self, item: &mut Item<S::Key, S::Value>) {
 		std::mem::swap(self.key_mut().deref_mut(), &mut item.key);

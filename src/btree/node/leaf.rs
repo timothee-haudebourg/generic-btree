@@ -18,6 +18,8 @@ pub trait LeafRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
 	/// Returns the identifer of the parent node, if any.
 	fn parent(&self) -> Option<usize>;
 
+	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
+
 	/// Find the offset of the item matching the given key.
 	#[inline]
 	fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, Offset> where S::Key: Borrow<Q>, Q: Ord {
@@ -80,15 +82,15 @@ pub trait LeafRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
 	}
 }
 
-impl<'a, T, S: 'a + Storage> LeafRef<'a, S> for &'a mut T where &'a T: LeafRef<'a, S> {
-	fn parent(&self) -> Option<usize> {
-		self.parent()
-	}
+// impl<'a, T, S: 'a + Storage> LeafRef<'a, S> for &'a mut T where for<'b> &'b T: LeafRef<'b, S> {
+// 	fn parent(&self) -> Option<usize> {
+// 		self.parent()
+// 	}
 
-	fn max_capacity(&self) -> usize {
-		self.max_capacity()
-	}
-}
+// 	fn max_capacity(&self) -> usize {
+// 		self.max_capacity()
+// 	}
+// }
 
 pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<'a, S> where S: StorageMut {
 	fn set_parent(&mut self, parent: Option<usize>);
