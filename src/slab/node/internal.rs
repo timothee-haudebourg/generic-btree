@@ -130,10 +130,6 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a,
 		(*self).parent()
 	}
 
-	fn item(&self, offset: Offset) -> Option<&'a Item<K, V>> {
-		(*self).item(offset)
-	}
-
 	/// Returns the id of the child with the given index, if any.
 	/// 
 	/// Note that in the case of leaf nodes, this always return `None`.
@@ -151,6 +147,12 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a,
 	}
 }
 
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalConst<'a, Storage<K, V, S>> for &'a Internal<K, V> {
+	fn item(&self, offset: Offset) -> Option<&'a Item<K, V>> {
+		(*self).item(offset)
+	}
+}
+
 impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, Storage<K, V, S>> for &'a mut Internal<K, V> {
 	/// Returns the current number of items stored in this node.
 	fn item_count(&self) -> usize {
@@ -160,6 +162,29 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, 
 	/// Returns a reference to the item with the given offset in the node.
 	fn borrow_item(&self, offset: Offset) -> Option<&Item<K, V>> {
 		(*self).item(offset)
+	}
+}
+
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a, Storage<K, V, S>> for &'a mut Internal<K, V> {
+	/// Returns the identifer of the parent node, if any.
+	fn parent(&self) -> Option<usize> {
+		Internal::<K, V>::parent(self)
+	}
+
+	/// Returns the id of the child with the given index, if any.
+	/// 
+	/// Note that in the case of leaf nodes, this always return `None`.
+	fn child_id(&self, index: usize) -> Option<usize> {
+		Internal::<K, V>::child_id(self, index)
+	}
+
+	/// Returns the maximum capacity of this node.
+	/// 
+	/// Must be at least 6 for internal nodes, and 7 for leaf nodes.
+	/// 
+	/// The node is considered overflowing if it contains `max_capacity` items.
+	fn max_capacity(&self) -> usize {
+		Internal::<K, V>::max_capacity(self)
 	}
 }
 
@@ -174,7 +199,7 @@ impl<'a, K, V, S: 'a + cc_traits::SlabMut<Node<K, V>>> btree::node::InternalMut<
 
 	/// Returns a mutable reference to the item with the given offset in the node.
 	fn into_item_mut(self, offset: Offset) -> Option<&'a mut Item<K, V>> {
-		self.branches.get(offset.unwrap()).map(|branch| &mut branch.item)
+		self.branches.get_mut(offset.unwrap()).map(|branch| &mut branch.item)
 	}
 
 	fn insert(&mut self, offset: Offset, item: Item<K, V>, right_child_id: usize) {
@@ -194,7 +219,7 @@ impl<'a, K, V, S: 'a + cc_traits::SlabMut<Node<K, V>>> btree::node::InternalMut<
 		item
 	}
 
-	fn append(&mut self, separator: Item<K, V>, other: Internal<K, V>) -> Offset {
+	fn append(&mut self, separator: Item<K, V>, mut other: Internal<K, V>) -> Offset {
 		let offset = self.branches.len().into();
 		self.branches.push(Branch {
 			item: separator,

@@ -18,14 +18,12 @@ pub trait LeafRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
 	/// Returns the identifer of the parent node, if any.
 	fn parent(&self) -> Option<usize>;
 
-	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
-
 	/// Find the offset of the item matching the given key.
 	#[inline]
 	fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, Offset> where S::Key: Borrow<Q>, Q: Ord {
 		match binary_search_min(self, key) {
 			Some(i) => {
-				let item = self.item(i).unwrap();
+				let item = self.borrow_item(i).unwrap();
 				if item.key().deref().borrow() == key {
 					Ok(i.into())
 				} else {
@@ -33,21 +31,6 @@ pub trait LeafRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
 				}
 			},
 			None => Err(0.into())
-		}
-	}
-
-	#[inline]
-	fn get<Q: ?Sized>(&self, key: &Q) -> Option<S::ValueRef<'a>> where S::Key: Borrow<Q>, Q: Ord {
-		match binary_search_min(self, key) {
-			Some(i) => {
-				let item = self.item(i).unwrap();
-				if item.key().deref().borrow() == key {
-					Some(item.value())
-				} else {
-					None
-				}
-			},
-			_ => None
 		}
 	}
 
@@ -82,17 +65,27 @@ pub trait LeafRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
 	}
 }
 
-// impl<'a, T, S: 'a + Storage> LeafRef<'a, S> for &'a mut T where for<'b> &'b T: LeafRef<'b, S> {
-// 	fn parent(&self) -> Option<usize> {
-// 		self.parent()
-// 	}
+/// Leaf node reference.
+pub trait LeafConst<'a, S: 'a + Storage>: LeafRef<'a, S> {
+	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
 
-// 	fn max_capacity(&self) -> usize {
-// 		self.max_capacity()
-// 	}
-// }
+	#[inline]
+	fn get<Q: ?Sized>(&self, key: &Q) -> Option<S::ValueRef<'a>> where S::Key: Borrow<Q>, Q: Ord {
+		match binary_search_min(self, key) {
+			Some(i) => {
+				let item = self.item(i).unwrap();
+				if item.key().deref().borrow() == key {
+					Some(item.value())
+				} else {
+					None
+				}
+			},
+			_ => None
+		}
+	}
+}
 
-pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<'a, S> where S: StorageMut {
+pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<'a, S> {
 	fn set_parent(&mut self, parent: Option<usize>);
 
 	/// Returns a mutable reference to the item with the given offset in the node.

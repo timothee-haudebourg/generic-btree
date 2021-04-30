@@ -17,6 +17,14 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::item::Ref<'a, S
 }
 
 impl<'a, K, V, S: 'a + cc_traits::SlabMut<Node<K, V>>> btree::node::item::Mut<'a, Storage<K, V, S>> for &'a mut Item<K, V> {
+	fn key(&self) -> &K {
+		&self.key
+	}
+
+	fn value(&self) -> &V {
+		&self.value
+	}
+	
 	fn key_mut(&mut self) -> &mut K {
 		&mut self.key
 	}

@@ -22,7 +22,8 @@ use node::{
 	Offset,
 	Item,
 	ItemRef,
-	ItemMut
+	ItemMut,
+	WouldUnderflow
 };
 pub use iter::{
 	Iter,
@@ -54,10 +55,10 @@ pub trait Storage: Sized {
 	type ValueRef<'r>: Deref<Target=Self::Value> where Self::Value: 'r;
 
 	/// Leaf node reference.
-	type LeafRef<'r>: node::LeafRef<'r, Self> where Self: 'r;
+	type LeafRef<'r>: node::LeafConst<'r, Self> where Self: 'r;
 
 	/// Internal node reference.
-	type InternalRef<'r>: node::InternalRef<'r, Self> where Self: 'r;
+	type InternalRef<'r>: node::InternalConst<'r, Self> where Self: 'r;
 
 	/// Item reference.
 	type ItemRef<'r>: node::item::Ref<'r, Self> where Self: 'r;
@@ -1227,11 +1228,6 @@ pub unsafe trait StorageMut: Storage {
 	/// This function panics if no node has the given `id`.
 	#[inline]
 	fn rebalance(&mut self, mut id: usize, mut addr: Address) -> Address {
-		use node::{
-			Ref,
-			Mut
-		};
-
 		let mut balance = self.node(id).unwrap().balance();
 
 		loop {
@@ -1357,12 +1353,6 @@ pub unsafe trait StorageMut: Storage {
 	/// or if this sibling would underflow.
 	#[inline]
 	fn try_rotate_left(&mut self, id: usize, deficient_child_index: usize, addr: &mut Address) -> bool {
-		use node::{
-			Ref,
-			Mut,
-			item::Mut as ItemMut
-		};
-
 		let pivot_offset = deficient_child_index.into();
 		let right_sibling_index = deficient_child_index + 1;
 		let (right_sibling_id, deficient_child_id) = {
@@ -1416,12 +1406,6 @@ pub unsafe trait StorageMut: Storage {
 	/// or if this sibling would underflow.
 	#[inline]
 	fn try_rotate_right(&mut self, id: usize, deficient_child_index: usize, addr: &mut Address) -> bool {
-		use node::{
-			Ref,
-			Mut,
-			item::Mut as ItemMut
-		};
-
 		if deficient_child_index > 0 {
 			let left_sibling_index = deficient_child_index - 1;
 			let pivot_offset = left_sibling_index.into();
@@ -1469,11 +1453,6 @@ pub unsafe trait StorageMut: Storage {
 	/// Merge the child `deficient_child_index` in node `id` with one of its direct sibling.
 	#[inline]
 	fn merge(&mut self, id: usize, deficient_child_index: usize, mut addr: Address) -> (Balance, Address) {
-		use node::{
-			Ref,
-			Mut
-		};
-
 		let offset: Offset = if deficient_child_index > 0 {
 			// merge with left sibling
 			(deficient_child_index-1).into()

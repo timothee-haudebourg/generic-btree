@@ -24,6 +24,7 @@ const M: usize = 8;
 pub struct Storage<K, V, S = Slab<Node<K, V>>> {
 	slab: S,
 	root: Option<usize>,
+	len: usize,
 	key: PhantomData<K>,
 	value: PhantomData<V>
 }
@@ -33,6 +34,7 @@ impl<K, V, S: Default> Default for Storage<K, V, S> {
 		Self {
 			slab: S::default(),
 			root: None,
+			len: 0,
 			key: PhantomData,
 			value: PhantomData
 		}
@@ -50,15 +52,15 @@ impl<K, V, S: cc_traits::Slab<Node<K, V>>> btree::Storage for Storage<K, V, S> {
 	type ItemRef<'r> where S: 'r, V: 'r, K: 'r = &'r Item<Self::Key, Self::Value>;
 
 	fn root(&self) -> Option<usize> {
-		panic!("TODO")
+		self.root
 	}
 
 	fn len(&self) -> usize {
-		panic!("TODO")
+		self.len
 	}
 
 	fn node<'r>(&'r self, id: usize) -> Option<btree::node::Ref<'r, Self>> where V: 'r, K: 'r {
-		panic!("TODO")
+		self.slab.get(id).map(|node| node.into())
 	}
 }
 
@@ -73,22 +75,22 @@ unsafe impl<K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::StorageMut for Stora
 	type ItemMut<'r> where S: 'r, K: 'r, V: 'r = &'r mut Item<K, V>;
 
 	fn set_root(&mut self, root: Option<usize>) {
-		panic!("TODO")
+		self.root = root
 	}
 	
 	fn set_len(&mut self, new_len: usize) {
-		panic!("TODO")
+		self.len = new_len
 	}
 
 	fn allocate_node(&mut self, node: Buffer<Self>) -> usize {
-		panic!("TODO")
+		self.slab.insert(node.into())
 	}
 
 	fn release_node(&mut self, id: usize) -> Buffer<Self> {
-		panic!("TODO")
+		self.slab.remove(id).unwrap().into()
 	}
 
 	fn node_mut(&mut self, id: usize) -> Option<NodeMut<Self>> {
-		panic!("TODO")
+		self.slab.get_mut(id).map(|node| node.into())
 	}
 }

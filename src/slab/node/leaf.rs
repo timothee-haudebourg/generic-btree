@@ -77,12 +77,14 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, Sto
 		}
 	}
 
-	fn item(&self, offset: Offset) -> Option<&'a Item<K, V>> {
-		self.items.get(offset.unwrap())
-	}
-
 	fn max_capacity(&self) -> usize {
 		M+1
+	}
+}
+
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafConst<'a, Storage<K, V, S>> for &'a Leaf<K, V> {
+	fn item(&self, offset: Offset) -> Option<&'a Item<K, V>> {
+		self.items.get(offset.unwrap())
 	}
 }
 
@@ -105,10 +107,6 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, Sto
 		} else {
 			Some(self.parent)
 		}
-	}
-
-	fn item(&self, offset: Offset) -> Option<&'a Item<K, V>> {
-		self.items.get(offset.unwrap())
 	}
 
 	fn max_capacity(&self) -> usize {

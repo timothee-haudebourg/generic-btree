@@ -87,26 +87,16 @@ pub trait Ref<'a, S: 'a + Storage> {
 	}
 }
 
-impl<'a, T, S: 'a + Storage> Ref<'a, S> for &'a mut T where &'a T: Ref<'a, S> {
-	fn key(&self) -> S::KeyRef<'a> {
-		self.key()
-	}
-
-	fn value(&self) -> S::ValueRef<'a> {
-		self.value()
-	}
-}
-
 /// Item reference.
 pub trait Mut<'a, S: 'a + StorageMut> {
 	/// Returns a reference to the item key.
-	fn key(&self) -> S::KeyRef<'a>;
+	fn key(&self) -> S::KeyRef<'_>;
 
 	/// Returns a refrence to the item value.
-	fn value(&self) -> S::ValueRef<'a>;
+	fn value(&self) -> S::ValueRef<'_>;
 
 	#[inline]
-	fn as_pair(&self) -> (S::KeyRef<'a>, S::ValueRef<'a>) {
+	fn as_pair(&self) -> (S::KeyRef<'_>, S::ValueRef<'_>) {
 		(self.key(), self.value())
 	}
 

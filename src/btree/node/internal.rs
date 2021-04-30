@@ -15,11 +15,9 @@ use super::{
 };
 
 /// Internal node reference.
-pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> + Sized {
+pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
 	/// Returns the identifer of the parent node, if any.
 	fn parent(&self) -> Option<usize>;
-
-	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
 
 	/// Find the offset of the item matching the given key.
 	///
@@ -29,7 +27,7 @@ pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> + Sized {
 	fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, (usize, usize)> where S::Key: Borrow<Q>, Q: Ord {
 		match binary_search_min(self, key) {
 			Some(i) => {
-				let item = self.item(i).unwrap();
+				let item = self.borrow_item(i).unwrap();
 				if item.key().deref().borrow() == key {
 					Ok(i)
 				} else {
@@ -39,21 +37,6 @@ pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> + Sized {
 				}
 			},
 			None => Err((0, self.child_id(0).unwrap()))
-		}
-	}
-
-	#[inline]
-	fn get<Q: ?Sized>(&self, key: &Q) -> Result<S::ValueRef<'a>, usize> where S::Key: Borrow<Q>, Q: Ord {
-		match binary_search_min(self, key) {
-			Some(i) => {
-				let item = self.item(i).unwrap();
-				if item.key().deref().borrow() == key {
-					Ok(item.value())
-				} else {
-					Err(self.child_id(1usize + i.unwrap()).unwrap())
-				}
-			},
-			_ => Err(self.child_id(0).unwrap())
 		}
 	}
 
@@ -84,23 +67,6 @@ pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> + Sized {
 			index: 0,
 			storage: PhantomData
 		}
-	}
-
-	#[inline]
-	fn separators(&self, index: usize) -> (Option<S::KeyRef<'a>>, Option<S::KeyRef<'a>>) {
-		let min = if index > 0 {
-			self.item((index - 1).into()).map(|item| item.key())
-		} else {
-			None
-		};
-
-		let max = if index < self.child_count() {
-			self.item(index.into()).map(|item| item.key())
-		} else {
-			None
-		};
-
-		(min, max)
 	}
 
 	/// Returns the maximum capacity of this node.
@@ -134,6 +100,42 @@ pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> + Sized {
 	}
 }
 
+pub trait InternalConst<'a, S: 'a + Storage>: InternalRef<'a, S> {
+	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
+
+	#[inline]
+	fn get<Q: ?Sized>(&self, key: &Q) -> Result<S::ValueRef<'a>, usize> where S::Key: Borrow<Q>, Q: Ord {
+		match binary_search_min(self, key) {
+			Some(i) => {
+				let item = self.item(i).unwrap();
+				if item.key().deref().borrow() == key {
+					Ok(item.value())
+				} else {
+					Err(self.child_id(1usize + i.unwrap()).unwrap())
+				}
+			},
+			_ => Err(self.child_id(0).unwrap())
+		}
+	}
+
+	#[inline]
+	fn separators(&self, index: usize) -> (Option<S::KeyRef<'a>>, Option<S::KeyRef<'a>>) {
+		let min = if index > 0 {
+			self.item((index - 1).into()).map(|item| item.key())
+		} else {
+			None
+		};
+
+		let max = if index < self.child_count() {
+			self.item(index.into()).map(|item| item.key())
+		} else {
+			None
+		};
+
+		(min, max)
+	}
+}
+
 // impl<'a, T, S: 'a + Storage> InternalRef<'a, S> for &'a mut T where for<'b> &'b T: InternalRef<'b, S> {
 // 	fn parent(&self) -> Option<usize> {
 // 		self.parent()
@@ -148,7 +150,7 @@ pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> + Sized {
 // 	}
 // }
 
-pub trait InternalMut<'a, S: 'a + StorageMut>: InternalRef<'a, S> {
+pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<'a, S> {
 	fn set_parent(&mut self, parent: Option<usize>);
 
 	fn set_first_child(&mut self, id: usize);
@@ -215,7 +217,7 @@ pub trait InternalMut<'a, S: 'a + StorageMut>: InternalRef<'a, S> {
 	}
 }
 
-pub struct Children<'b, S, R> {
+pub struct Children<'b, S, R: ?Sized> {
 	node: &'b R,
 	index: usize,
 	storage: PhantomData<S>

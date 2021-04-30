@@ -23,10 +23,12 @@ pub use offset::Offset;
 pub use addr::Address;
 pub use leaf::{
 	LeafRef,
+	LeafConst,
 	LeafMut
 };
 pub use internal::{
 	InternalRef,
+	InternalConst,
 	InternalMut
 };
 pub use item::{
@@ -79,9 +81,23 @@ pub struct Reference<S, L, I> {
 	storage: PhantomData<S>
 }
 
-pub type Ref<'a, S> = Reference<S, <S as Storage>::LeafRef<'a>, <S as Storage>::InternalRef<'a>>;
-
 impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S, L, I> where S::Key: 'a, S::Value: 'a {
+	#[inline]
+	pub fn leaf(node: L) -> Self {
+		Self {
+			desc: Desc::Leaf(node),
+			storage: PhantomData
+		}
+	}
+
+	#[inline]
+	pub fn internal(node: I) -> Self {
+		Self {
+			desc: Desc::Internal(node),
+			storage: PhantomData
+		}
+	}
+
 	#[inline]
 	pub fn ty(&self) -> Type {
 		match &self.desc {
@@ -112,21 +128,21 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 	}
 
 	/// Returns a reference to the item with the given offset in the node.
-	pub fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>> {
+	pub fn borrow_item(&self, offset: Offset) -> Option<S::ItemRef<'_>> {
 		match &self.desc {
-			Desc::Internal(node) => node.item(offset),
-			Desc::Leaf(node) => node.item(offset)
+			Desc::Internal(node) => node.borrow_item(offset),
+			Desc::Leaf(node) => node.borrow_item(offset)
 		}
 	}
 
 	#[inline]
-	pub fn first_item(&self) -> Option<S::ItemRef<'a>> {
-		self.item(0.into())
+	pub fn borrow_first_item(&self) -> Option<S::ItemRef<'_>> {
+		self.borrow_item(0.into())
 	}
 
 	#[inline]
-	pub fn last_item(&self) -> Option<S::ItemRef<'a>> {
-		self.item((self.item_count()-1).into())
+	pub fn borrow_last_item(&self) -> Option<S::ItemRef<'_>> {
+		self.borrow_item((self.item_count()-1).into())
 	}
 
 	/// Find the offset of the item matching the given key.
@@ -177,29 +193,10 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 	}
 
 	#[inline]
-	pub fn get<Q: ?Sized>(&self, key: &Q) -> Result<Option<S::ValueRef<'a>>, usize> where S::Key: Borrow<Q>, Q: Ord {
-		match &self.desc {
-			Desc::Leaf(leaf) => Ok(leaf.get(key)),
-			Desc::Internal(node) => match node.get(key) {
-				Ok(value) => Ok(Some(value)),
-				Err(e) => Err(e)
-			}
-		}
-	}
-
-	#[inline]
 	pub fn children(&self) -> Children<S, I> {
 		match &self.desc {
 			Desc::Leaf(_) => Children::Leaf,
 			Desc::Internal(node) => Children::Internal(node.children())
-		}
-	}
-
-	#[inline]
-	pub fn separators(&self, i: usize) -> (Option<S::KeyRef<'a>>, Option<S::KeyRef<'a>>) {
-		match &self.desc {
-			Desc::Leaf(_) => (None, None),
-			Desc::Internal(node) => node.separators(i)
 		}
 	}
 
@@ -289,13 +286,13 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 
 		for i in 1..self.item_count() {
 			let prev = i-1;
-			if self.item(i.into()).unwrap().key().deref() < self.item(prev.into()).unwrap().key().deref() {
+			if self.borrow_item(i.into()).unwrap().key().deref() < self.borrow_item(prev.into()).unwrap().key().deref() {
 				panic!("items are not sorted")
 			}
 		}
 
 		if let Some(min) = min {
-			if let Some(item) = self.first_item() {
+			if let Some(item) = self.borrow_first_item() {
 				if min.deref() >= &item.key() {
 					panic!("item key is greater than right separator")
 				}
@@ -303,11 +300,52 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 		}
 
 		if let Some(max) = max {
-			if let Some(item) = self.last_item() {
+			if let Some(item) = self.borrow_last_item() {
 				if max.deref() <= &item.key() {
 					panic!("item key is less than left separator")
 				}
 			}
+		}
+	}
+}
+
+pub type Ref<'a, S> = Reference<S, <S as Storage>::LeafRef<'a>, <S as Storage>::InternalRef<'a>>;
+
+impl<'a, S: 'a + Storage, L: LeafConst<'a, S>, I: InternalConst<'a, S>> Reference<S, L, I> where S::Key: 'a, S::Value: 'a {
+	/// Returns a reference to the item with the given offset in the node.
+	pub fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>> {
+		match &self.desc {
+			Desc::Internal(node) => node.item(offset),
+			Desc::Leaf(node) => node.item(offset)
+		}
+	}
+
+	#[inline]
+	pub fn first_item(&self) -> Option<S::ItemRef<'a>> {
+		self.item(0.into())
+	}
+
+	#[inline]
+	pub fn last_item(&self) -> Option<S::ItemRef<'a>> {
+		self.item((self.item_count()-1).into())
+	}
+
+	#[inline]
+	pub fn get<Q: ?Sized>(&self, key: &Q) -> Result<Option<S::ValueRef<'a>>, usize> where S::Key: Borrow<Q>, Q: Ord {
+		match &self.desc {
+			Desc::Leaf(leaf) => Ok(leaf.get(key)),
+			Desc::Internal(node) => match node.get(key) {
+				Ok(value) => Ok(Some(value)),
+				Err(e) => Err(e)
+			}
+		}
+	}
+
+	#[inline]
+	pub fn separators(&self, i: usize) -> (Option<S::KeyRef<'a>>, Option<S::KeyRef<'a>>) {
+		match &self.desc {
+			Desc::Leaf(_) => (None, None),
+			Desc::Internal(node) => node.separators(i)
 		}
 	}
 }
