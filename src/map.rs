@@ -1,7 +1,22 @@
 use std::{
 	borrow::Borrow,
-	iter::FusedIterator,
-	ops::RangeBounds
+	iter::{
+		FusedIterator,
+		FromIterator
+	},
+	ops::{
+		RangeBounds,
+		Index
+	},
+	cmp::{
+		Ord,
+		PartialOrd,
+		Ordering
+	},
+	hash::{
+		Hash,
+		Hasher
+	}
 };
 use crate::{
 	Storage,
@@ -11,7 +26,9 @@ use crate::{
 		OccupiedEntry,
 		EntriesMut,
 		Keys,
+		IntoKeys,
 		Values,
+		IntoValues,
 		ValuesMut,
 		node::{
 			ItemRef,
@@ -37,7 +54,7 @@ impl<S: Storage> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use generic_btree::Map;
+	/// use generic_btree::slab::Map;
 	///
 	/// let mut a = Map::new();
 	/// assert!(a.is_empty());
@@ -54,9 +71,9 @@ impl<S: Storage> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut a = BTreeMap::new();
+	/// let mut a = Map::new();
 	/// assert_eq!(a.len(), 0);
 	/// a.insert(1, "a");
 	/// assert_eq!(a.len(), 1);
@@ -74,9 +91,9 @@ impl<S: Storage> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<i32, &str> = BTreeMap::new();
+	/// let mut map: Map<i32, &str> = Map::new();
 	/// map.insert(1, "a");
 	/// assert_eq!(map.get_key_value(&1), Some((&1, &"a")));
 	/// assert_eq!(map.get_key_value(&2), None);
@@ -94,9 +111,9 @@ impl<S: Storage> Map<S> {
 	/// # Examples
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// assert_eq!(map.get_key_value(&1), Some((&1, &"a")));
 	/// assert_eq!(map.get_key_value(&2), None);
@@ -116,9 +133,9 @@ impl<S: Storage> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// assert_eq!(map.first_key_value(), None);
 	/// map.insert(1, "b");
 	/// map.insert(2, "a");
@@ -137,9 +154,9 @@ impl<S: Storage> Map<S> {
 	/// Basic usage:
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "b");
 	/// map.insert(2, "a");
 	/// assert_eq!(map.last_key_value(), Some((&2, &"a")));
@@ -154,9 +171,9 @@ impl<S: Storage> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(3, "c");
 	/// map.insert(2, "b");
 	/// map.insert(1, "a");
@@ -188,10 +205,10 @@ impl<S: Storage> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	/// use std::ops::Bound::Included;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(3, "a");
 	/// map.insert(5, "b");
 	/// map.insert(8, "c");
@@ -215,9 +232,9 @@ impl<S: Storage> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut a = BTreeMap::new();
+	/// let mut a = Map::new();
 	/// a.insert(2, "b");
 	/// a.insert(1, "a");
 	///
@@ -234,9 +251,9 @@ impl<S: Storage> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut a = BTreeMap::new();
+	/// let mut a = Map::new();
 	/// a.insert(1, "hello");
 	/// a.insert(2, "goodbye");
 	///
@@ -255,9 +272,9 @@ impl<S: Storage> Map<S> {
 	///
 	/// # Example
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<i32, &str> = BTreeMap::new();
+	/// let mut map: Map<i32, &str> = Map::new();
 	/// map.insert(1, "a");
 	/// assert_eq!(map.contains_key(&1), true);
 	/// assert_eq!(map.contains_key(&2), false);
@@ -272,7 +289,7 @@ impl<S: Storage> Map<S> {
 	/// Requires the `dot` feature.
 	#[cfg(feature = "dot")]
 	#[inline]
-	pub fn dot_write<W: std::io::Write>(&self, f: &mut W) -> std::io::Result<()> where K: std::fmt::Display, V: std::fmt::Display {
+	pub fn dot_write<W: std::io::Write>(&self, f: &mut W) -> std::io::Result<()> where S::Key: std::fmt::Display, S::Value: std::fmt::Display {
 		self.btree.dot_write(f)
 	}
 
@@ -292,9 +309,9 @@ impl<S: StorageMut> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// if let Some(x) = map.get_mut(&1) {
 	///     *x = "b";
@@ -311,9 +328,9 @@ impl<S: StorageMut> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut letters = BTreeMap::new();
+	/// let mut letters = Map::new();
 	///
 	/// for ch in "a short treatise on fungi".chars() {
 	///     let counter = letters.entry(ch).or_insert(0);
@@ -336,9 +353,9 @@ impl<S: StorageMut> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// map.insert(2, "b");
 	/// if let Some(mut entry) = map.first_entry() {
@@ -360,9 +377,9 @@ impl<S: StorageMut> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// map.insert(2, "b");
 	/// if let Some(mut entry) = map.last_entry() {
@@ -398,9 +415,9 @@ impl<S: StorageMut> Map<S> {
 	/// Draining elements in ascending order, while keeping a usable map each iteration.
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// map.insert(2, "b");
 	/// while let Some((key, _val)) = map.pop_first() {
@@ -421,9 +438,9 @@ impl<S: StorageMut> Map<S> {
 	/// Draining elements in descending order, while keeping a usable map each iteration.
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// map.insert(2, "b");
 	/// while let Some((key, _val)) = map.pop_last() {
@@ -445,9 +462,9 @@ impl<S: StorageMut> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// assert_eq!(map.remove(&1), Some("a"));
 	/// assert_eq!(map.remove(&1), None);
@@ -468,9 +485,9 @@ impl<S: StorageMut> Map<S> {
 	/// Basic usage:
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// assert_eq!(map.remove_entry(&1), Some((1, "a")));
 	/// assert_eq!(map.remove_entry(&1), None);
@@ -509,9 +526,9 @@ impl<S: StorageMut> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert("a", 1);
 	/// map.insert("b", 2);
 	/// map.insert("c", 3);
@@ -526,6 +543,53 @@ impl<S: StorageMut> Map<S> {
 	#[inline]
 	pub fn iter_mut(&mut self) -> IterMut<S> {
 		IterMut::new(&mut self.btree)
+	}
+
+	#[inline]
+	pub fn into_iter(self) -> IntoIter<S> {
+		IntoIter::new(self)
+	}
+
+	/// Creates a consuming iterator visiting all the keys, in sorted order.
+	/// The map cannot be used after calling this.
+	/// The iterator element type is `K`.
+	///
+	/// # Example
+	///
+	/// ```
+	/// use generic_btree::slab::Map;
+	///
+	/// let mut a = Map::new();
+	/// a.insert(2, "b");
+	/// a.insert(1, "a");
+	///
+	/// let keys: Vec<i32> = a.into_keys().collect();
+	/// assert_eq!(keys, [1, 2]);
+	/// ```
+	#[inline]
+	pub fn into_keys(self) -> IntoKeys<S> {
+		self.btree.into_keys()
+	}
+
+	/// Creates a consuming iterator visiting all the values, in order by key.
+	/// The map cannot be used after calling this.
+	/// The iterator element type is `V`.
+	///
+	/// # Example
+	///
+	/// ```
+	/// use generic_btree::slab::Map;
+	///
+	/// let mut a = Map::new();
+	/// a.insert(1, "hello");
+	/// a.insert(2, "goodbye");
+	///
+	/// let values: Vec<&str> = a.into_values().collect();
+	/// assert_eq!(values, ["hello", "goodbye"]);
+	/// ```
+	#[inline]
+	pub fn into_values(self) -> IntoValues<S> {
+		self.btree.into_values()
 	}
 
 	/// Gets a mutable iterator over the entries of the map, sorted by key, that allows insertion and deletion of the iterated entries.
@@ -545,9 +609,9 @@ impl<S: StorageMut> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert("a", 1);
 	/// map.insert("b", 2);
 	/// map.insert("d", 4);
@@ -580,9 +644,9 @@ impl<S: StorageMut> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<&str, i32> = ["Alice", "Bob", "Carol", "Cheryl"]
+	/// let mut map: Map<&str, i32> = ["Alice", "Bob", "Carol", "Cheryl"]
 	///     .iter()
 	///     .map(|&s| (s, 0))
 	///     .collect();
@@ -608,9 +672,9 @@ impl<S: StorageMut> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut a = BTreeMap::new();
+	/// let mut a = Map::new();
 	/// a.insert(1, String::from("hello"));
 	/// a.insert(2, String::from("goodbye"));
 	///
@@ -648,10 +712,10 @@ impl<S: StorageMut> Map<S> {
 	/// Splitting a map into even and odd keys, reusing the original map:
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<i32, i32> = (0..8).map(|x| (x, x)).collect();
-	/// let evens: BTreeMap<_, _> = map.drain_filter(|k, _v| k % 2 == 0).collect();
+	/// let mut map: Map<i32, i32> = (0..8).map(|x| (x, x)).collect();
+	/// let evens: Map<_, _> = map.drain_filter(|k, _v| k % 2 == 0).collect();
 	/// let odds = map;
 	/// assert_eq!(evens.keys().copied().collect::<Vec<_>>(), vec![0, 2, 4, 6]);
 	/// assert_eq!(odds.keys().copied().collect::<Vec<_>>(), vec![1, 3, 5, 7]);
@@ -668,9 +732,9 @@ impl<S: StorageMut> Map<S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<i32, i32> = (0..8).map(|x| (x, x*10)).collect();
+	/// let mut map: Map<i32, i32> = (0..8).map(|x| (x, x*10)).collect();
 	/// // Keep only the elements with even-numbered keys.
 	/// map.retain(|&k, _| k % 2 == 0);
 	/// assert!(map.into_iter().eq(vec![(0, 0), (2, 20), (4, 40), (6, 60)]));
@@ -685,6 +749,88 @@ impl<S: StorageMut> Map<S> {
 
 	pub fn btree_mut(&mut self) -> &mut S {
 		&mut self.btree
+	}
+}
+
+impl<Q: ?Sized, S: Storage> Index<&Q> for Map<S>
+where
+	S::Key: Ord + Borrow<Q>,
+	Q: Ord,
+	for<'r> S::ValueRef<'r>: Into<&'r S::Value>
+{
+	type Output = S::Value;
+
+	/// Returns a reference to the value corresponding to the supplied key.
+	///
+	/// # Panics
+	///
+	/// Panics if the key is not present in the `Map`.
+	#[inline]
+	fn index(&self, key: &Q) -> &S::Value {
+		self.get(key).expect("no entry found for key").into()
+	}
+}
+
+impl<S: Storage, T: Storage> PartialEq<Map<T>> for Map<S> where T::Key: PartialEq<S::Key>, T::Value: PartialEq<S::Value> {
+	fn eq(&self, other: &Map<T>) -> bool {
+		self.btree.eq(&other.btree)
+	}
+}
+
+impl<S: Storage + Default> Default for Map<S> {
+	#[inline]
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
+impl<S: StorageMut + Default> FromIterator<(S::Key, S::Value)> for Map<S> where S::Key: Ord {
+	#[inline]
+	fn from_iter<T>(iter: T) -> Self where T: IntoIterator<Item = (S::Key, S::Value)> {
+		let mut map = Self::new();
+
+		for (key, value) in iter {
+			map.insert(key, value);
+		}
+
+		map
+	}
+}
+
+impl<S: StorageMut> Extend<(S::Key, S::Value)> for Map<S> where S::Key: Ord {
+	#[inline]
+	fn extend<T>(&mut self, iter: T) where T: IntoIterator<Item = (S::Key, S::Value)> {
+		for (key, value) in iter {
+			self.insert(key, value);
+		}
+	}
+}
+
+// impl<'a, S: StorageMut> Extend<(&'a S::Key, &'a S::Value)> for Map<S> where S::Key: Ord + Copy, S::Value: Copy {
+// 	#[inline]
+// 	fn extend<T>(&mut self, iter: T) where T: IntoIterator<Item = (&'a S::Key, &'a S::Value)> {
+// 		self.extend(iter.into_iter().map(|(&key, &value)| (key, value)));
+// 	}
+// }
+
+impl<S: Storage> Eq for Map<S> where S::Key: Eq, S::Value: Eq {}
+
+impl<S: Storage, T: Storage> PartialOrd<Map<T>> for Map<S> where T::Key: PartialOrd<S::Key>, T::Value: PartialOrd<S::Value> {
+	fn partial_cmp(&self, other: &Map<T>) -> Option<Ordering> {
+		self.btree.partial_cmp(&other.btree)
+	}
+}
+
+impl<S: Storage> Ord for Map<S> where S::Key: Ord, S::Value: Ord {
+	fn cmp(&self, other: &Self) -> Ordering {
+		self.btree.cmp(&other.btree)
+	}
+}
+
+impl<S: Storage> Hash for Map<S> where S::Key: Hash, S::Value: Hash {
+	#[inline]
+	fn hash<H: Hasher>(&self, h: &mut H) {
+		self.btree.hash(h)
 	}
 }
 
@@ -779,6 +925,52 @@ impl<'a, S: 'a + StorageMut> IntoIterator for &'a mut Map<S> {
 	#[inline]
 	fn into_iter(self) -> Self::IntoIter {
 		self.iter_mut()
+	}
+}
+
+pub struct IntoIter<S> {
+	inner: crate::btree::IntoIter<S>
+}
+
+impl<S: StorageMut> IntoIter<S> {
+	pub(crate) fn new(map: Map<S>) -> Self {
+		Self {
+			inner: map.btree.into_iter()
+		}
+	}
+}
+
+impl<S: StorageMut> FusedIterator for IntoIter<S> { }
+impl<S: StorageMut> ExactSizeIterator for IntoIter<S> { }
+
+impl<S: StorageMut> Iterator for IntoIter<S> {
+	type Item = (S::Key, S::Value);
+
+	#[inline]
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		self.inner.size_hint()
+	}
+
+	#[inline]
+	fn next(&mut self) -> Option<Self::Item> {
+		self.inner.next().map(|item| item.into_inner())
+	}
+}
+
+impl<S: StorageMut> DoubleEndedIterator for IntoIter<S> {
+	#[inline]
+	fn next_back(&mut self) -> Option<Self::Item> {
+		self.inner.next_back().map(|item| item.into_inner())
+	}
+}
+
+impl<S: StorageMut> IntoIterator for Map<S> {
+	type IntoIter = IntoIter<S>;
+	type Item = (S::Key, S::Value);
+
+	#[inline]
+	fn into_iter(self) -> Self::IntoIter {
+		self.into_iter()
 	}
 }
 

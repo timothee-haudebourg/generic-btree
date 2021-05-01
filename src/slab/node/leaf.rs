@@ -54,6 +54,10 @@ impl<K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Leaf<Storage<
 	fn push_right(&mut self, item: Item<K, V>) {
 		self.items.push(item)
 	}
+
+	fn forget(self) {
+		std::mem::forget(self.items)
+	}
 }
 
 impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, Storage<K, V, S>> for &'a Leaf<K, V> {

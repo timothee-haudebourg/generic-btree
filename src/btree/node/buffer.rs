@@ -31,12 +31,37 @@ impl<S: StorageMut> Buffer<S> {
 		Self::Internal(node)
 	}
 
+	pub fn parent(&self) -> Option<usize> {
+		match self {
+			Self::Internal(node) => node.parent(),
+			Self::Leaf(node) => node.parent()
+		}
+	}
+
+	pub fn child_count(&self) -> usize {
+		match self {
+			Self::Internal(node) => node.child_count(),
+			Self::Leaf(_) => 0
+		}
+	}
+
 	pub fn children(&self) -> Children<S> {
 		Children {
 			inner: match self {
 				Buffer::Leaf(_) => None,
 				Buffer::Internal(node) => Some(node.children())
 			}
+		}
+	}
+
+	/// Drop this node without dropping the items.
+	/// 
+	/// Used without care, this may lead to memory leaks.
+	#[inline]
+	pub fn forget(self) {
+		match self {
+			Self::Internal(node) => node.forget(),
+			Self::Leaf(node) => node.forget()
 		}
 	}
 }

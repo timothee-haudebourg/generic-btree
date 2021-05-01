@@ -28,8 +28,11 @@ use node::{
 pub use iter::{
 	Iter,
 	IterMut,
+	IntoIter,
 	Keys,
+	IntoKeys,
 	Values,
+	IntoValues,
 	ValuesMut,
 	Range,
 	RangeMut,
@@ -42,6 +45,38 @@ pub use entry::{
 	OccupiedEntry,
 	EntriesMut
 };
+
+/// B-Tree validation error.
+#[derive(Debug)]
+pub enum ValidationError {
+	/// Some node is missing.
+	MissingNode(usize),
+
+	/// The leaves of the tree have different depths.
+	NotBalanced,
+
+	/// A node is referenced as the child of some node, but it is declared with a different parent.
+	/// 
+	/// The first parameter is the node id,
+	/// then the found parent id referencing the node as a child,
+	/// then the expected parent id.
+	WrongParent(usize, Option<usize>, Option<usize>), // (node id, found parent, expected parent)
+
+	/// The given node is overflowing.
+	Overflow(usize),
+
+	/// The given node is underflowing.
+	Underflow(usize),
+
+	/// The items inside the given node are not sorted.
+	UnsortedNode(usize),
+
+	/// The smallest item key of the node is smaller than the left separator of the node.
+	UnsortedFromLeft(usize),
+
+	/// The greatest item key of the node is greater than the right separator of the node.
+	UnsortedFromRight(usize),
+}
 
 /// Data storage.
 pub trait Storage: Sized {
@@ -99,9 +134,9 @@ pub trait Storage: Sized {
 	///
 	/// # Example
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<i32, &str> = BTreeMap::new();
+	/// let mut map: Map<i32, &str> = Map::new();
 	/// map.insert(1, "a");
 	/// assert_eq!(map.contains_key(&1), true);
 	/// assert_eq!(map.contains_key(&2), false);
@@ -163,9 +198,9 @@ pub trait Storage: Sized {
 	/// Basic usage:
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "b");
 	/// map.insert(2, "a");
 	/// assert_eq!(map.last_key_value(), Some((&2, &"a")));
@@ -634,41 +669,85 @@ pub trait Storage: Sized {
 		}
 	}
 
+	/// Write the tree in the DOT graph descrption language.
+	///
+	/// Requires the `dot` feature.
+	#[cfg(feature = "dot")]
+	#[inline]
+	fn dot_write<W: std::io::Write>(&self, f: &mut W) -> std::io::Result<()> where Self::Key: std::fmt::Display, Self::Value: std::fmt::Display {
+		write!(f, "digraph tree {{\n\tnode [shape=record];\n")?;
+		match self.root() {
+			Some(id) => self.dot_write_node(f, id)?,
+			None => ()
+		}
+		write!(f, "}}")
+	}
+
+	/// Write the given node in the DOT graph descrption language.
+	///
+	/// Requires the `dot` feature.
+	#[cfg(feature = "dot")]
+	#[inline]
+	fn dot_write_node<W: std::io::Write>(&self, f: &mut W, id: usize) -> std::io::Result<()> where Self::Key: std::fmt::Display, Self::Value: std::fmt::Display {
+		let name = format!("n{}", id);
+		let node = self.node(id).unwrap();
+
+		write!(f, "\t{} [label=\"", name)?;
+		if let Some(parent) = node.parent() {
+			write!(f, "({})|", parent)?;
+		}
+
+		node.dot_write_label(f)?;
+		write!(f, "({})\"];\n", id)?;
+
+		for child_id in node.children() {
+			self.dot_write_node(f, child_id)?;
+			let child_name = format!("n{}", child_id);
+			write!(f, "\t{} -> {}\n", name, child_name)?;
+		}
+
+		Ok(())
+	}
+
 	#[cfg(debug_assertions)]
-	fn validate(&self) where Self::Key: Ord {
+	fn validate(&self) -> Result<(), ValidationError> where Self::Key: Ord {
 		match self.root() {
 			Some(id) => {
-				self.validate_node(id, None, None, None);
+				self.validate_node(id, None, None, None)?;
 			},
 			None => ()
 		}
+
+		Ok(())
 	}
 
 	/// Validate the given node and returns the depth of the node.
 	#[cfg(debug_assertions)]
-	fn validate_node(&self, id: usize, parent: Option<usize>, min: Option<Self::KeyRef<'_>>, max: Option<Self::KeyRef<'_>>) -> usize where Self::Key: Ord {
-		let node = self.node(id).expect("missing node");
-		node.validate(parent, min, max);
+	fn validate_node<'a>(&'a self, id: usize, parent: Option<usize>, min: Option<Self::KeyRef<'a>>, max: Option<Self::KeyRef<'a>>) -> Result<usize, ValidationError> where Self::Key: Ord {
+		let node = self.node(id).ok_or(ValidationError::MissingNode(id))?;
+		let (mut min, mut max) = node.validate(id, parent, min, max)?;
 
 		let mut depth = None;
 		for (i, child_id) in node.children().enumerate() {
-			let (min, max) = node.separators(i);
+			let (child_min, child_max) = node.separators(i);
+			let min = child_min.or_else(|| min.take());
+			let max = child_max.or_else(|| max.take());
 
-			let child_depth = self.validate_node(child_id, Some(id), min, max);
+			let child_depth = self.validate_node(child_id, Some(id), min, max)?;
 			match depth {
 				None => depth = Some(child_depth),
 				Some(depth) => {
 					if depth != child_depth {
-						panic!("tree not balanced")
+						return Err(ValidationError::NotBalanced)
 					}
 				}
 			}
 		}
 
-		match depth {
+		Ok(match depth {
 			Some(depth) => depth + 1,
 			None => 0
-		}
+		})
 	}
 }
 
@@ -716,6 +795,19 @@ pub unsafe trait StorageMut: Storage {
 	}
 
 	fn allocate_node(&mut self, node: node::Buffer<Self>) -> usize;
+
+	/// Allocate the given node and setup its children parent id.
+	fn insert_node(&mut self, node: node::Buffer<Self>) -> usize {
+		let child_count = node.child_count();
+		let id = self.allocate_node(node);
+		
+		for i in 0..child_count {
+			let child_id = self.node(id).unwrap().child_id(i).unwrap();
+			self.node_mut(child_id).unwrap().set_parent(Some(id))
+		}
+
+		id
+	}
 
 	/// Remove the node with the given `id`.
 	/// 
@@ -776,9 +868,9 @@ pub unsafe trait StorageMut: Storage {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// map.insert(2, "b");
 	/// if let Some(mut entry) = map.first_entry() {
@@ -808,9 +900,9 @@ pub unsafe trait StorageMut: Storage {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// map.insert(2, "b");
 	/// if let Some(mut entry) = map.last_entry() {
@@ -866,9 +958,9 @@ pub unsafe trait StorageMut: Storage {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut a = BTreeMap::new();
+	/// let mut a = Map::new();
 	/// a.insert(1, String::from("hello"));
 	/// a.insert(2, String::from("goodbye"));
 	///
@@ -907,7 +999,7 @@ pub unsafe trait StorageMut: Storage {
 		if addr.is_nowhere() {
 			if self.is_empty() {
 				let new_root = node::Buffer::leaf(None, item);
-				let id = self.allocate_node(new_root);
+				let id = self.insert_node(new_root);
 				self.set_root(Some(id));
 				self.incr_len();
 				Address { id, offset: 0.into() }
@@ -958,9 +1050,9 @@ pub unsafe trait StorageMut: Storage {
 	/// Draining elements in ascending order, while keeping a usable map each iteration.
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// map.insert(2, "b");
 	/// while let Some((key, _val)) = map.pop_first() {
@@ -981,9 +1073,9 @@ pub unsafe trait StorageMut: Storage {
 	/// Draining elements in descending order, while keeping a usable map each iteration.
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// map.insert(2, "b");
 	/// while let Some((key, _val)) = map.pop_last() {
@@ -1005,9 +1097,9 @@ pub unsafe trait StorageMut: Storage {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// assert_eq!(map.remove(&1), Some("a"));
 	/// assert_eq!(map.remove(&1), None);
@@ -1066,9 +1158,9 @@ pub unsafe trait StorageMut: Storage {
 	/// Basic usage:
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map = BTreeMap::new();
+	/// let mut map = Map::new();
 	/// map.insert(1, "a");
 	/// assert_eq!(map.remove_entry(&1), Some((1, "a")));
 	/// assert_eq!(map.remove_entry(&1), None);
@@ -1118,7 +1210,7 @@ pub unsafe trait StorageMut: Storage {
 
 				if let Some(value) = to_insert {
 					let new_root = node::Buffer::leaf(None, Item::new(key, value));
-					let root_id = self.allocate_node(new_root);
+					let root_id = self.insert_node(new_root);
 					self.set_root(Some(root_id));
 					self.incr_len()
 				}
@@ -1239,7 +1331,7 @@ pub unsafe trait StorageMut: Storage {
 					assert!(!self.node_mut(id).unwrap().is_underflowing());
 
 					let (median_offset, median, right_node) = self.node_mut(id).unwrap().split();
-					let right_id = self.allocate_node(right_node);
+					let right_id = self.insert_node(right_node);
 
 					let parent = self.node(id).unwrap().parent();
 					match parent {
@@ -1270,7 +1362,7 @@ pub unsafe trait StorageMut: Storage {
 						None => {
 							let left_id = id;
 							let new_root = node::Buffer::binary(None, left_id, median, right_id);
-							let root_id = self.allocate_node(new_root);
+							let root_id = self.insert_node(new_root);
 
 							self.set_root(Some(root_id));
 							self.node_mut(left_id).unwrap().set_parent(Some(root_id));
@@ -1367,7 +1459,7 @@ pub unsafe trait StorageMut: Storage {
 
 		let left = self.node_mut(right_sibling_id).unwrap().pop_left();
 		match left {
-			Ok((mut value, opt_child_id)) => {
+			Ok((opt_child_id, mut value)) => {
 				self.node_mut(id).unwrap().into_item_mut(pivot_offset).unwrap().swap(&mut value);
 				let left_offset = self.node_mut(deficient_child_id).unwrap().push_right(value, opt_child_id);
 
@@ -1417,7 +1509,7 @@ pub unsafe trait StorageMut: Storage {
 			match right {
 				Ok((left_offset, mut value, opt_child_id)) => {
 					self.node_mut(id).unwrap().into_item_mut(pivot_offset).unwrap().swap(&mut value);
-					self.node_mut(deficient_child_id).unwrap().push_left(value, opt_child_id);
+					self.node_mut(deficient_child_id).unwrap().push_left(opt_child_id, value);
 
 					// update opt_child's parent
 					if let Some(child_id) = opt_child_id {
@@ -1492,5 +1584,81 @@ pub unsafe trait StorageMut: Storage {
 		}
 
 		(balance, addr)
+	}
+
+	/// Remove every entry from the map.
+	fn clear(&mut self) {
+		if let Some(id) = self.root() {
+			self.clear_node(id)
+		}
+
+		self.set_root(None);
+		self.set_len(0)
+	}
+
+	fn clear_node(&mut self, id: usize) {
+		let node = self.release_node(id);
+		for child_id in node.children() {
+			self.clear_node(child_id)
+		}
+	}
+
+	/// Remove every entry from the map without dropping the items.
+	fn forget_all(&mut self) {
+		if let Some(id) = self.root() {
+			self.forget_node(id)
+		}
+
+		self.set_root(None);
+		self.set_len(0)
+	}
+
+	fn forget_node(&mut self, id: usize) {
+		let node = self.release_node(id);
+		for child_id in node.children() {
+			self.forget_node(child_id)
+		}
+		node.forget()
+	}
+
+	/// Moves all elements from `other` into `Self`, leaving `other` empty.
+	#[inline]
+	fn append(&mut self, other: &mut Self) where Self::Key: Ord, Self: Default {
+		// Do we have to append anything at all?
+		if other.is_empty() {
+			return;
+		}
+
+		// We can just swap `self` and `other` if `self` is empty.
+		if self.is_empty() {
+			std::mem::swap(self, other);
+			return;
+		}
+
+		let other = std::mem::take(other);
+		for item in other.into_iter() {
+			self.insert(item.key, item.value);
+		}
+	}
+
+	#[inline]
+	fn into_iter(self) -> IntoIter<Self> {
+		IntoIter::new(self)
+	}
+
+	/// Creates a consuming iterator visiting all the keys, in sorted order.
+	/// The map cannot be used after calling this.
+	/// The iterator element type is `Self::Key`.
+	#[inline]
+	fn into_keys(self) -> IntoKeys<Self> {
+		IntoKeys::new(self)
+	}
+
+	/// Creates a consuming iterator visiting all the values, in order by key.
+	/// The map cannot be used after calling this.
+	/// The iterator element type is `Self::Value`.
+	#[inline]
+	fn into_values(self) -> IntoValues<Self> {
+		IntoValues::new(self)
 	}
 }

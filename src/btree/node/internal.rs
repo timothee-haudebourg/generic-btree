@@ -69,6 +69,14 @@ pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
 		}
 	}
 
+	fn items(&self) -> Items<S, Self> {
+		Items {
+			node: self,
+			offset: 0.into(),
+			storage: PhantomData
+		}
+	}
+
 	/// Returns the maximum capacity of this node.
 	/// 
 	/// Must be at least 6 for internal nodes, and 7 for leaf nodes.
@@ -200,6 +208,7 @@ pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<'a, S> {
 		}
 
 		let mut right_node = S::InternalNode::default();
+		right_node.set_parent(self.parent());
 
 		// Remove the median pivot.
 		let (median_item, median_right_child) = self.remove(median_i.into());
@@ -231,6 +240,29 @@ impl<'a, 'b, S: 'a + Storage, R: InternalRef<'a, S>> Iterator for Children<'b, S
 			let i = self.index;
 			self.index += 1;
 			self.node.child_id(i)
+		} else {
+			None
+		}
+	}
+}
+
+pub struct Items<'b, S, R: ?Sized> {
+	node: &'b R,
+	offset: Offset,
+	storage: PhantomData<S>
+}
+
+impl<'a, 'b, S: 'a + Storage, R: InternalRef<'a, S>> Iterator for Items<'b, S, R> where 'a: 'b {
+	type Item = (usize, S::ItemRef<'b>, usize);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.offset < self.node.item_count() {
+			let offset = self.offset;
+			self.offset = offset + 1;
+			let left_child_id = self.node.child_id(offset.unwrap()).unwrap();
+			let right_child_id = self.node.child_id(offset.unwrap()+1).unwrap();
+			let item = self.node.borrow_item(offset).unwrap();
+			Some((left_child_id, item, right_child_id))
 		} else {
 			None
 		}

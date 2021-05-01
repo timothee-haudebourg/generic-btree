@@ -1,6 +1,7 @@
-use std::borrow::Borrow;
-use std::ops::{
-	Deref
+use std::{
+	borrow::Borrow,
+	ops::Deref,
+	marker::PhantomData
 };
 use crate::util::binary_search_min;
 use super::{
@@ -31,6 +32,14 @@ pub trait LeafRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
 				}
 			},
 			None => Err(0.into())
+		}
+	}
+
+	fn items(&self) -> Items<S, Self> {
+		Items {
+			node: self,
+			offset: 0.into(),
+			storage: PhantomData
 		}
 	}
 
@@ -143,6 +152,7 @@ pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<'a, S> {
 		}
 
 		let mut right_node = S::LeafNode::default();
+		right_node.set_parent(self.parent());
 
 		// Remove the median pivot.
 		let median_item = self.remove(median_i.into());
@@ -156,5 +166,25 @@ pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<'a, S> {
 		// assert!(!right_node.is_underflowing());
 
 		(self.item_count(), median_item, right_node)
+	}
+}
+
+pub struct Items<'b, S, R: ?Sized> {
+	node: &'b R,
+	offset: Offset,
+	storage: PhantomData<S>
+}
+
+impl<'a, 'b, S: 'a + Storage, R: LeafRef<'a, S>> Iterator for Items<'b, S, R> where 'a: 'b {
+	type Item = S::ItemRef<'b>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.offset < self.node.item_count() {
+			let offset = self.offset;
+			self.offset = offset + 1;
+			self.node.borrow_item(offset)
+		} else {
+			None
+		}
 	}
 }

@@ -34,6 +34,11 @@ pub trait Internal<S: StorageMut>: Default {
 	fn set_first_child(&mut self, id: usize);
 
 	fn push_right(&mut self, item: Item<S::Key, S::Value>, child: usize);
+
+	/// Drop this internal node without dropping the items.
+	/// 
+	/// Used without care, this may lead to memory leaks.
+	fn forget(self);
 }
 
 pub struct Children<'a, S: StorageMut, R> {

@@ -16,12 +16,12 @@ pub mod node;
 pub use item::Item;
 pub use node::Node;
 
-pub type Map<K, V, S = Slab<Node<K, V>>> = crate::Map<Storage<K, V, S>>;
+pub type Map<K, V> = crate::Map<Storage<K, V, Slab<Node<K, V>>>>;
 
 const M: usize = 8;
 
 /// Slab storage.
-pub struct Storage<K, V, S = Slab<Node<K, V>>> {
+pub struct Storage<K, V, S> {
 	slab: S,
 	root: Option<usize>,
 	len: usize,

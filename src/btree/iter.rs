@@ -6,7 +6,8 @@ use std::{
 	},
 	ops::{
 		RangeBounds,
-		Bound
+		Bound,
+		Deref
 	},
 	borrow::Borrow
 };
@@ -94,6 +95,249 @@ impl<'a, S: Storage> DoubleEndedIterator for Iter<'a, S> {
 		} else {
 			None
 		}
+	}
+}
+
+/// An owning iterator over the entries of a `BTreeMap`.
+///
+/// This `struct` is created by the [`into_iter`] method on [`BTreeMap`]
+/// (provided by the `IntoIterator` trait). See its documentation for more.
+///
+/// [`into_iter`]: IntoIterator::into_iter
+pub struct IntoIter<S> {
+	/// The tree.
+	btree: S,
+
+	/// Address of the next item, or the last valid address.
+	addr: Option<Address>,
+
+	/// Address following the last item.
+	end: Option<Address>,
+
+	/// Number of remaining items.
+	len: usize
+}
+
+impl<S: Storage> IntoIter<S> {
+	#[inline]
+	pub fn new(btree: S) -> Self {
+		let addr = btree.first_item_address();
+		let len = btree.len();
+		IntoIter {
+			btree,
+			addr,
+			end: None,
+			len
+		}
+	}
+}
+
+impl<S: StorageMut> FusedIterator for IntoIter<S> { }
+impl<S: StorageMut> ExactSizeIterator for IntoIter<S> { }
+
+impl<S: StorageMut> Iterator for IntoIter<S> {
+	type Item = Item<S::Key, S::Value>;
+
+	#[inline]
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		(self.len, Some(self.len))
+	}
+
+	#[inline]
+	fn next(&mut self) -> Option<Self::Item> {
+		match self.addr {
+			Some(addr) => {
+				if self.len > 0 {
+					self.len -= 1;
+		
+					let item = unsafe {
+						// this is safe because the item at `self.end` exists and is never touched again.
+						let item = self.btree.item(addr).unwrap();
+						Item::new(
+							std::ptr::read(item.key().deref()),
+							std::ptr::read(item.value().deref()),
+						)
+					};
+		
+					if self.len > 0 {
+						self.addr = self.btree.next_back_address(addr); // an item address is always followed by a valid address.
+		
+						while let Some(addr) = self.addr {
+							if addr.offset < self.btree.node(addr.id).unwrap().item_count() {
+								break // we have found an item address.
+							} else {
+								self.addr = self.btree.next_back_address(addr);
+		
+								// we have gove through every item of the node, we can release it.
+								let node = self.btree.release_node(addr.id);
+								node.forget(); // do not call `drop` on the node since items have been moved.
+							}
+						}
+					} else {
+						// cleanup.
+						if self.end.is_some() {
+							while self.addr != self.end {
+								let addr = self.addr.unwrap();
+								self.addr = self.btree.next_back_address(addr);
+	
+								if addr.offset >= self.btree.node(addr.id).unwrap().item_count() {
+									let node = self.btree.release_node(addr.id);
+									node.forget(); // do not call `drop` on the node since items have been moved.
+								}
+							}
+						}
+
+						if let Some(addr) = self.addr {
+							let mut id = Some(addr.id);
+							while let Some(node_id) = id {
+								let node = self.btree.release_node(node_id);
+								id = node.parent();
+								node.forget(); // do not call `drop` on the node since items have been moved.
+							}
+						}
+					}
+		
+					Some(item)
+				} else {
+					None
+				}
+			},
+			None => None
+		}
+	}
+}
+
+impl<S: StorageMut> DoubleEndedIterator for IntoIter<S> {
+	fn next_back(&mut self) -> Option<Item<S::Key, S::Value>> {
+		if self.len > 0 {
+			let addr = match self.end {
+				Some(mut addr) => {
+					addr = self.btree.previous_front_address(addr).unwrap();
+					while addr.offset.is_before() {
+						let id = addr.id;
+						addr = self.btree.previous_front_address(addr).unwrap();
+	
+						// we have gove through every item of the node, we can release it.
+						let node = self.btree.release_node(id);
+						node.forget(); // do not call `drop` on the node since items have been moved.
+					}
+
+					addr
+				},
+				None => self.btree.last_item_address().unwrap()
+			};
+
+			self.len -= 1;
+
+			let item = unsafe {
+				// this is safe because the item at `self.end` exists and is never touched again.
+				let item = self.btree.item(addr).unwrap();
+				Item::new(
+					std::ptr::read(item.key().deref()),
+					std::ptr::read(item.value().deref()),
+				)
+			};
+
+			self.end = Some(addr);
+
+			if self.len == 0 {
+				// cleanup.
+				while self.addr != self.end {
+					let addr = self.addr.unwrap();
+					self.addr = self.btree.next_back_address(addr);
+
+					if addr.offset >= self.btree.node(addr.id).unwrap().item_count() {
+						let node = self.btree.release_node(addr.id);
+						node.forget(); // do not call `drop` on the node since items have been moved.
+					}
+				}
+
+				if let Some(addr) = self.addr {
+					let mut id = Some(addr.id);
+					while let Some(node_id) = id {
+						let node = self.btree.release_node(node_id);
+						id = node.parent();
+						node.forget(); // do not call `drop` on the node since items have been moved.
+					}
+				}
+			}
+
+			Some(item)
+		} else {
+			None
+		}
+	}
+}
+
+pub struct IntoKeys<S> {
+	inner: IntoIter<S>
+}
+
+impl<S: Storage> IntoKeys<S> {
+	pub(crate) fn new(btree: S) -> Self {
+		Self {
+			inner: IntoIter::new(btree)
+		}
+	}
+}
+
+impl<S: StorageMut> Iterator for IntoKeys<S> {
+	type Item = S::Key;
+
+	#[inline]
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		self.inner.size_hint()
+	}
+
+	#[inline]
+	fn next(&mut self) -> Option<S::Key> {
+		self.inner.next().map(|item| item.key)
+	}
+}
+
+impl<S: StorageMut> FusedIterator for IntoKeys<S> { }
+impl<S: StorageMut> ExactSizeIterator for IntoKeys<S> { }
+
+impl<S: StorageMut> DoubleEndedIterator for IntoKeys<S> {
+	#[inline]
+	fn next_back(&mut self) -> Option<S::Key> {
+		self.inner.next_back().map(|item| item.key)
+	}
+}
+
+pub struct IntoValues<S> {
+	inner: IntoIter<S>
+}
+
+impl<S: Storage> IntoValues<S> {
+	pub(crate) fn new(btree: S) -> Self {
+		Self {
+			inner: IntoIter::new(btree)
+		}
+	}
+}
+
+impl<S: StorageMut> Iterator for IntoValues<S> {
+	type Item = S::Value;
+
+	#[inline]
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		self.inner.size_hint()
+	}
+
+	#[inline]
+	fn next(&mut self) -> Option<S::Value> {
+		self.inner.next().map(|item| item.value)
+	}
+}
+
+impl<S: StorageMut> FusedIterator for IntoValues<S> { }
+impl<S: StorageMut> ExactSizeIterator for IntoValues<S> { }
+
+impl<S: StorageMut> DoubleEndedIterator for IntoValues<S> {
+	#[inline]
+	fn next_back(&mut self) -> Option<S::Value> {
+		self.inner.next_back().map(|item| item.value)
 	}
 }
 

@@ -7,7 +7,8 @@ use std::{
 };
 use super::{
 	Storage,
-	StorageMut
+	StorageMut,
+	ValidationError
 };
 
 mod balance;
@@ -65,10 +66,6 @@ impl Type {
 			_ => false
 		}
 	}
-}
-
-pub trait FromStorage {
-	type Storage;
 }
 
 pub enum Desc<L, I> {
@@ -145,6 +142,14 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 		self.borrow_item((self.item_count()-1).into())
 	}
 
+	#[inline]
+	pub fn items(&self) -> Items<S, L, I> {
+		match &self.desc {
+			Desc::Leaf(node) => Items::Leaf(node.items()),
+			Desc::Internal(node) => Items::Internal(node.items())
+		}
+	}
+
 	/// Find the offset of the item matching the given key.
 	///
 	/// If the key matches no item in this node,
@@ -181,6 +186,10 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 			Desc::Internal(node) => node.child_id(index),
 			Desc::Leaf(_) => None
 		}
+	}
+
+	pub fn first_child_id(&self) -> Option<usize> {
+		self.child_id(0)
 	}
 
 	/// Returns the index of the child with the given id, if any.
@@ -255,57 +264,62 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 	/// Requires the `dot` feature.
 	#[cfg(feature = "dot")]
 	#[inline]
-	pub fn dot_write_label<W: std::io::Write>(&self, f: &mut W) -> std::io::Result<()> where K: std::fmt::Display, V: std::fmt::Display {
-		write!(f, "<c0> |")?;
-		let mut i = 1;
-		for branch in &self.other_children {
-			write!(f, "{{{}|<c{}> {}}} |", branch.item.key(), i, branch.item.value())?;
-			i += 1;
+	pub fn dot_write_label<W: std::io::Write>(&self, f: &mut W) -> std::io::Result<()> where S::Key: std::fmt::Display, S::Value: std::fmt::Display {
+		match &self.desc {
+			Desc::Leaf(node) => {
+				for item in node.items() {
+					write!(f, "{{{}|{}}}|", item.key().deref(), item.value().deref())?;
+				}
+			},
+			Desc::Internal(node) => {
+				write!(f, "<c0> |")?;
+				for (i, (_, item, _right)) in node.items().enumerate() {
+					write!(f, "{{{}|<c{}> {}}} |", item.key().deref(), i, item.value().deref())?;
+				}
+			}
 		}
 
 		Ok(())
 	}
 
 	#[cfg(debug_assertions)]
-	pub fn validate(&self, parent: Option<usize>, min: Option<S::KeyRef<'_>>, max: Option<S::KeyRef<'_>>) where S::Key: Ord {
+	pub fn validate(&self, id: usize, parent: Option<usize>, min: Option<S::KeyRef<'a>>, max: Option<S::KeyRef<'a>>) -> Result<(Option<S::KeyRef<'a>>, Option<S::KeyRef<'a>>), ValidationError> where S::Key: Ord {
 		if self.parent() != parent {
-			panic!("wrong parent")
+			return Err(ValidationError::WrongParent(id, self.parent(), parent))
 		}
 
 		if min.is_some() || max.is_some() { // not root
 			match self.balance() {
-				Balance::Overflow => panic!("node is overflowing"),
-				Balance::Underflow(_) => panic!("node is underflowing"),
+				Balance::Overflow => return Err(ValidationError::Overflow(id)),
+				Balance::Underflow(_) => return Err(ValidationError::Underflow(id)),
 				_ => ()
 			}
-		}
-
-		if self.item_count() == 0 {
-			panic!("node is empty")
 		}
 
 		for i in 1..self.item_count() {
 			let prev = i-1;
 			if self.borrow_item(i.into()).unwrap().key().deref() < self.borrow_item(prev.into()).unwrap().key().deref() {
-				panic!("items are not sorted")
+				return Err(ValidationError::UnsortedNode(id))
 			}
 		}
 
-		if let Some(min) = min {
+		if let Some(min) = &min {
 			if let Some(item) = self.borrow_first_item() {
 				if min.deref() >= &item.key() {
-					panic!("item key is greater than right separator")
+					return Err(ValidationError::UnsortedFromLeft(id))
 				}
 			}
 		}
 
-		if let Some(max) = max {
+		if let Some(max) = &max {
 			if let Some(item) = self.borrow_last_item() {
 				if max.deref() <= &item.key() {
-					panic!("item key is less than left separator")
+					return Err(ValidationError::UnsortedFromRight(id))
 				}
 			}
 		}
+
+		Ok((min, max))
 	}
 }
 
@@ -362,15 +376,17 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	}
 
 	/// Sets the first child of the node.
-	/// The node must be an internal node.
 	/// 
 	/// # Panics
 	/// 
-	/// This function panics if the node is a leaf.
-	pub fn set_first_child(&mut self, child_id: usize) {
-		match &mut self.desc {
-			Desc::Internal(node) => node.set_first_child(child_id),
-			Desc::Leaf(_) => panic!("cannot set first child of a leaf node.")
+	/// This function panics if the node is a leeaf node and `child_id` is not `None`,
+	/// or if the node is an internal node and `child_id` is `None`.
+	pub fn set_first_child(&mut self, child_id: Option<usize>) {
+		match (&mut self.desc, child_id) {
+			(Desc::Internal(node), Some(child_id)) => node.set_first_child(child_id),
+			(Desc::Internal(_), None) => panic!("first child of internal node cannot be `None`."),
+			(Desc::Leaf(_), None) => (),
+			(Desc::Leaf(_), Some(_)) => panic!("cannot set first child of a leaf node.")
 		}
 	}
 
@@ -458,17 +474,21 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	}
 
 	#[inline]
-	pub fn push_left(&mut self, item: StorageItem<S>, child_id: Option<usize>) {
-		self.insert(0.into(), item, child_id)
+	pub fn push_left(&mut self, child_id: Option<usize>, item: StorageItem<S>) {
+		self.insert(0.into(), item, self.first_child_id());
+		self.set_first_child(child_id);
 	}
 
 	/// Remove the first item of the node unless it would undeflow.
 	#[inline]
-	pub fn pop_left(&mut self) -> Result<(StorageItem<S>, Option<usize>), WouldUnderflow> {
+	pub fn pop_left(&mut self) -> Result<(Option<usize>, StorageItem<S>), WouldUnderflow> {
 		if self.item_count() <= self.min_capacity() {
 			Err(WouldUnderflow)
 		} else {
-			Ok(self.remove(0.into()))
+			let first_child_id = self.first_child_id();
+			let (item, child_id) = self.remove(0.into());
+			self.set_first_child(child_id);
+			Ok((first_child_id, item))
 		}
 	}
 
@@ -484,7 +504,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 		if self.item_count() <= self.min_capacity() {
 			Err(WouldUnderflow)
 		} else {
-			let offset: Offset = self.item_count().into();
+			let offset: Offset = (self.item_count() - 1).into();
 			let (item, right_child_id) = self.remove(offset);
 			Ok((offset, item, right_child_id))
 		}
@@ -530,6 +550,23 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 				node.append(separator, other)
 			},
 			_ => panic!("trying to append incompatible node")
+		}
+	}
+}
+
+pub enum Items<'b, S, L, I> {
+	Leaf(leaf::Items<'b, S, L>),
+	Internal(internal::Items<'b, S, I>)
+}
+
+impl<'a, 'b, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Iterator for Items<'b, S, L, I> where 'a: 'b {
+	type Item = (Option<usize>, S::ItemRef<'b>, Option<usize>);
+
+	#[inline]
+	fn next(&mut self) -> Option<Self::Item> {
+		match self {
+			Self::Leaf(inner) => inner.next().map(|item| (None, item, None)),
+			Self::Internal(inner) => inner.next().map(|(left, item, right)| (Some(left), item, Some(right)))
 		}
 	}
 }

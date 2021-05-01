@@ -25,7 +25,7 @@ pub fn binary_search_min<'a, S: 'a + Storage, A: ItemAccess<'a, S> + ?Sized, Q: 
 		let mut i: Offset = 0.into();
 		let mut j: Offset = (sorted_items.item_count() - 1).into();
 
-		if sorted_items.borrow_item(i).unwrap().key().deref().borrow() <= key {
+		if sorted_items.borrow_item(j).unwrap().key().deref().borrow() <= key {
 			return Some(j)
 		}
 

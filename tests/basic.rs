@@ -17,16 +17,19 @@ const SEED: &'static [u8; 16] = b"testseedtestseed";
 
 #[test]
 pub fn insert() {
-	let mut btree: Map<usize, usize> = Map::new();
+	let mut map: Map<usize, usize> = Map::new();
 
 	for (key, value) in &ITEMS {
-		if let Some(_) = btree.insert(*key, *value) {
-			println!("duplicate: {}", key);
+		eprintln!("inserting: {}", key);
+
+		if let Some(_) = map.insert(*key, *value) {
+			eprintln!("duplicate: {}", key);
 		}
-		btree.btree().validate();
+
+		map.btree().validate().expect("validation failed")
 	}
 
-	assert!(btree.len() == 100);
+	assert!(map.len() == 100);
 }
 
 #[test]
@@ -43,8 +46,11 @@ pub fn remove() {
 	items.shuffle(&mut rng);
 
 	for (key, _) in &items {
+		eprintln!("removing: {}", key);
+
 		map.remove(&key);
-		map.btree().validate();
+
+		map.btree().validate().expect("validation failed")
 	}
 
 	assert!(map.is_empty())
@@ -82,33 +88,6 @@ pub fn item_addresses() {
 	}
 }
 
-// #[test]
-// pub fn valid_addresses() {
-// 	let mut btree: BTreeMap<usize, usize> = BTreeMap::new();
-
-// 	for (key, value) in &ITEMS {
-// 		btree.insert(*key, *value);
-// 	}
-
-// 	for (key, _) in &ITEMS {
-// 		let addr = btree.address_of(key).ok().unwrap();
-
-// 		match btree.previous_front_address(addr) {
-// 			Some(before_addr) => {
-// 				assert!(before_addr != addr);
-// 				let addr_again = btree.next_back_address(before_addr).unwrap();
-// 				assert_eq!(addr_again, addr)
-// 			},
-// 			None => ()
-// 		}
-
-// 		let after_addr = btree.next_back_address(addr).unwrap(); // there is always a valid address after an item address.
-// 		assert!(after_addr != addr);
-// 		let addr_again = btree.previous_front_address(after_addr).unwrap();
-// 		assert_eq!(addr_again, addr)
-// 	}
-// }
-
 #[test]
 pub fn insert_addresses() {
 	let mut map: Map<usize, usize> = Map::new();
@@ -140,7 +119,7 @@ pub fn remove_addresses() {
 				Ok(addr) => {
 					let (_, addr) = btree.remove_at(addr).unwrap();
 					btree.insert_at(addr, Item::new(*key, *value));
-					btree.validate();
+					btree.validate().expect("validation failed");
 				},
 				Err(_) => break
 			}
@@ -174,7 +153,7 @@ pub fn update() {
 			}
 		});
 
-		map.btree().validate();
+		map.btree().validate().expect("validation failed");
 	}
 
 	for (key, value) in &ITEMS {

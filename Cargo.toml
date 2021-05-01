@@ -3,6 +3,10 @@ name = "generic-btree"
 version = "0.1.0"
 edition = "2018"
 
+[features]
+default = ["dot"]
+dot = []
+
 [dependencies]
 slab = "*"
 cc-traits = { version = "^0.4", features = ["nightly", "slab"] }

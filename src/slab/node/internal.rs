@@ -110,6 +110,10 @@ impl<K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Internal<Stor
 	fn push_right(&mut self, item: Item<K, V>, child: usize) {
 		self.push_right(item, child)
 	}
+
+	fn forget(self) {
+		std::mem::forget(self.branches)
+	}
 }
 
 impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, Storage<K, V, S>> for &'a Internal<K, V> {

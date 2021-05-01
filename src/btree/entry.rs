@@ -1,4 +1,7 @@
-use std::fmt;
+use std::{
+	fmt,
+	ops::Deref
+};
 use super::{
 	Storage,
 	StorageMut,
@@ -12,7 +15,7 @@ use super::{
 
 /// A view into a single entry in a map, which may either be vacant or occupied.
 ///
-/// This enum is constructed from the [`entry`](`BTreeMap#entry`) method on [`BTreeMap`].
+/// This enum is constructed from the [`entry`](`Map#entry`) method on [`Map`].
 pub enum Entry<'a, S: Storage> {
 	Vacant(VacantEntry<'a, S>),
 	Occupied(OccupiedEntry<'a, S>)
@@ -35,9 +38,9 @@ impl<'a, S: Storage> Entry<'a, S> {
 	/// # Examples
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	/// assert_eq!(map.entry("poneyland").key(), &"poneyland");
 	/// ```
 	#[inline]
@@ -54,6 +57,32 @@ pub enum EntryKey<'a, S: 'a + Storage> {
 	Vacant(&'a S::Key)
 }
 
+impl<'a, S: 'a + Storage> Deref for EntryKey<'a, S> {
+	type Target = S::Key;
+
+	fn deref(&self) -> &Self::Target {
+		match self {
+			Self::Occupied(key) => key.deref(),
+			Self::Vacant(key) => key
+		}
+	}
+}
+
+impl<'a, S: 'a + Storage> fmt::Debug for EntryKey<'a, S> where S::KeyRef<'a>: fmt::Debug, S::Key: fmt::Debug {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		match self {
+			Self::Vacant(key) => key.fmt(f),
+			Self::Occupied(key) => key.fmt(f)
+		}
+	}
+}
+
+impl<'a, 'b, S: 'a + Storage, T> PartialEq<&'b T> for EntryKey<'a, S> where S::Key: PartialEq<T> {
+	fn eq(&self, other: &&'b T) -> bool {
+		self.deref() == *other
+	}
+}
+
 impl<'a, S: StorageMut> Entry<'a, S> {
 	/// Ensures a value is in the entry by inserting the default if empty, and returns
 	/// a mutable reference to the value in the entry.
@@ -61,9 +90,9 @@ impl<'a, S: StorageMut> Entry<'a, S> {
 	/// # Examples
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
 	///
 	/// assert_eq!(map["poneyland"], 12);
@@ -82,9 +111,9 @@ impl<'a, S: StorageMut> Entry<'a, S> {
 	/// # Examples
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<&str, String> = BTreeMap::new();
+	/// let mut map: Map<&str, String> = Map::new();
 	/// let s = "hoho".to_string();
 	///
 	/// map.entry("poneyland").or_insert_with(|| s);
@@ -107,9 +136,9 @@ impl<'a, S: StorageMut> Entry<'a, S> {
 	///
 	/// ```
 	/// #![feature(or_insert_with_key)]
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	///
 	/// map.entry("poneyland").or_insert_with_key(|key| key.chars().count());
 	///
@@ -132,9 +161,9 @@ impl<'a, S: StorageMut> Entry<'a, S> {
 	/// # Examples
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	///
 	/// map.entry("poneyland")
 	///    .and_modify(|e| { *e += 1 })
@@ -163,9 +192,9 @@ impl<'a, S: StorageMut> Entry<'a, S> {
 	/// # Examples
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<&str, Option<usize>> = BTreeMap::new();
+	/// let mut map: Map<&str, Option<usize>> = Map::new();
 	/// map.entry("poneyland").or_default();
 	///
 	/// assert_eq!(map["poneyland"], None);
@@ -189,7 +218,7 @@ impl<'a, S: Storage> fmt::Debug for Entry<'a, S> where S::Key: fmt::Debug, for<'
 	}
 }
 
-/// A view into a vacant entry in a [`BTreeMap`].
+/// A view into a vacant entry in a [`Map`].
 /// It is part of the [`Entry`] enum.
 pub struct VacantEntry<'a, S: Storage> {
 	pub(crate) map: &'a mut S,
@@ -208,9 +237,9 @@ impl<'a, S: Storage> VacantEntry<'a, S> {
 	///
 	/// ## Example
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	/// assert_eq!(map.entry("poneyland").key(), &"poneyland");
 	/// ```
 	#[inline]
@@ -222,10 +251,10 @@ impl<'a, S: Storage> VacantEntry<'a, S> {
 	///
 	/// ## Example
 	/// ```
-	/// use btree_slab::BTreeMap;
-	/// use btree_slab::generic::map::Entry;
+	/// use generic_btree::slab::Map;
+	/// use generic_btree::btree::Entry;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	///
 	/// if let Entry::Vacant(v) = map.entry("poneyland") {
 	///     v.into_key();
@@ -243,10 +272,10 @@ impl<'a, S: StorageMut> VacantEntry<'a, S> {
 	///
 	/// ## Example
 	/// ```
-	/// use btree_slab::BTreeMap;
-	/// use btree_slab::generic::map::Entry;
+	/// use generic_btree::slab::Map;
+	/// use generic_btree::btree::Entry;
 	///
-	/// let mut map: BTreeMap<&str, u32> = BTreeMap::new();
+	/// let mut map: Map<&str, u32> = Map::new();
 	///
 	/// if let Entry::Vacant(o) = map.entry("poneyland") {
 	///     o.insert(37);
@@ -267,7 +296,7 @@ impl<'a, S: Storage> fmt::Debug for VacantEntry<'a, S> where S::Key: fmt::Debug 
 	}
 }
 
-/// A view into an occupied entry in a [`BTreeMap`].
+/// A view into an occupied entry in a [`Map`].
 /// It is part of the [`Entry`] enum.
 pub struct OccupiedEntry<'a, S> {
 	pub(crate) map: &'a mut S,
@@ -285,10 +314,10 @@ impl<'a, S: Storage> OccupiedEntry<'a, S> {
 	///
 	/// # Example
 	/// ```
-	/// use btree_slab::BTreeMap;
-	/// use btree_slab::generic::map::Entry;
+	/// use generic_btree::slab::Map;
+	/// use generic_btree::btree::Entry;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
 	///
 	/// if let Entry::Occupied(o) = map.entry("poneyland") {
@@ -304,9 +333,9 @@ impl<'a, S: Storage> OccupiedEntry<'a, S> {
 	///
 	/// # Example
 	/// ```
-	/// use btree_slab::BTreeMap;
+	/// use generic_btree::slab::Map;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
 	/// assert_eq!(map.entry("poneyland").key(), &"poneyland");
 	/// ```
@@ -324,10 +353,10 @@ impl<'a, S: StorageMut> OccupiedEntry<'a, S> {
 	///
 	/// # Example
 	/// ```
-	/// use btree_slab::BTreeMap;
-	/// use btree_slab::generic::map::Entry;
+	/// use generic_btree::slab::Map;
+	/// use generic_btree::btree::Entry;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
 	///
 	/// assert_eq!(map["poneyland"], 12);
@@ -350,10 +379,10 @@ impl<'a, S: StorageMut> OccupiedEntry<'a, S> {
 	///
 	/// # Example
 	/// ```
-	/// use btree_slab::BTreeMap;
-	/// use btree_slab::generic::map::Entry;
+	/// use generic_btree::slab::Map;
+	/// use generic_btree::btree::Entry;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
 	///
 	/// if let Entry::Occupied(mut o) = map.entry("poneyland") {
@@ -375,10 +404,10 @@ impl<'a, S: StorageMut> OccupiedEntry<'a, S> {
 	/// # Example
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
-	/// use btree_slab::generic::map::Entry;
+	/// use generic_btree::slab::Map;
+	/// use generic_btree::btree::Entry;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
 	///
 	/// assert_eq!(map["poneyland"], 12);
@@ -397,10 +426,10 @@ impl<'a, S: StorageMut> OccupiedEntry<'a, S> {
 	/// # Examples
 	///
 	/// ```
-	/// use btree_slab::BTreeMap;
-	/// use btree_slab::generic::map::Entry;
+	/// use generic_btree::slab::Map;
+	/// use generic_btree::btree::Entry;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
 	///
 	/// if let Entry::Occupied(o) = map.entry("poneyland") {
@@ -418,10 +447,10 @@ impl<'a, S: StorageMut> OccupiedEntry<'a, S> {
 	///
 	/// # Example
 	/// ```
-	/// use btree_slab::BTreeMap;
-	/// use btree_slab::generic::map::Entry;
+	/// use generic_btree::slab::Map;
+	/// use generic_btree::btree::Entry;
 	///
-	/// let mut map: BTreeMap<&str, usize> = BTreeMap::new();
+	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
 	///
 	/// if let Entry::Occupied(o) = map.entry("poneyland") {
