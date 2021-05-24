@@ -1015,6 +1015,17 @@ fn filter<S: StorageMut, F>(f: &mut F, item: S::ItemMut<'_>) -> bool where F: Fn
 
 impl<'a, S: StorageMut, F> FusedIterator for DrainFilter<'a, S, F> where F: FnMut(&S::Key, &mut S::Value) -> bool {}
 
+impl<'a, S: StorageMut, F> Drop for DrainFilter<'a, S, F> where F: FnMut(&S::Key, &mut S::Value) -> bool {
+	#[inline]
+	fn drop(&mut self) {
+		loop {
+			if self.next().is_none() {
+				break
+			}
+		}
+	}
+}
+
 pub struct Range<'a, S: Storage> {
 	inner: crate::btree::Range<'a, S>
 }

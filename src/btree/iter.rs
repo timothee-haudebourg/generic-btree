@@ -751,13 +751,17 @@ impl<'a, S: StorageMut> DrainFilterInner<'a, S> {
 		loop {
 			let remove = self.btree.item_mut(self.addr).map(|item| (*pred)(item));
 
+			eprintln!("remove: {:?}", remove);
+
 			match remove {
 				Some(true) => {
 					let (item, next_addr) = self.btree.remove_at(self.addr).unwrap();
+					self.len -= 1;
 					self.addr = next_addr;
 					return Some(item)
 				},
 				Some(false) => {
+					self.len -= 1;
 					self.addr = self.btree.next_item_or_back_address(self.addr).unwrap();
 				},
 				None => return None
@@ -767,16 +771,21 @@ impl<'a, S: StorageMut> DrainFilterInner<'a, S> {
 
 	#[inline]
 	pub fn next_consume<F>(&mut self, mut pred: F) -> Option<Item<S::Key, S::Value>> where F: FnMut(S::ItemMut<'_>) -> bool {
+		eprintln!("next_consume");
 		loop {
 			let remove = self.btree.item_mut(self.addr).map(|item| pred(item));
+
+			eprintln!("remove: {:?}", remove);
 
 			match remove {
 				Some(true) => {
 					let (item, next_addr) = self.btree.remove_at(self.addr).unwrap();
+					self.len -= 1;
 					self.addr = next_addr;
 					return Some(item)
 				},
 				Some(false) => {
+					self.len -= 1;
 					self.addr = self.btree.next_item_or_back_address(self.addr).unwrap();
 				},
 				None => return None

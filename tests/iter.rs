@@ -197,5 +197,10 @@ fn retain() {
 	let mut map: Map<i32, i32> = (0..8).map(|x| (x, x*10)).collect();
 	// Keep only the elements with even-numbered keys.
 	map.retain(|&k, _| k % 2 == 0);
+
+	for (key, value) in &map {
+		eprintln!("{} => {}", key, value)
+	}
+
 	assert!(map.into_iter().eq(vec![(0, 0), (2, 20), (4, 40), (6, 60)]));
 }
