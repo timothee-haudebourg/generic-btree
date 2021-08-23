@@ -1,4 +1,4 @@
-use staticvec::StaticVec;
+use smallvec::SmallVec;
 use crate::{
 	btree::{
 		self,
@@ -20,7 +20,7 @@ struct Branch<K, V> {
 pub struct Internal<K, V> {
 	parent: usize,
 	first_child_id: usize,
-	branches: StaticVec<Branch<K, V>, M>
+	branches: SmallVec<[Branch<K, V>; M]>
 }
 
 impl<K, V> Default for Internal<K, V> {
@@ -28,7 +28,7 @@ impl<K, V> Default for Internal<K, V> {
 		Self {
 			parent: usize::MAX,
 			first_child_id: usize::MAX,
-			branches: StaticVec::new()
+			branches: SmallVec::new()
 		}
 	}
 }

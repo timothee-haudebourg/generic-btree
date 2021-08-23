@@ -1,4 +1,4 @@
-use staticvec::StaticVec;
+use smallvec::SmallVec;
 use crate::{
 	btree::{
 		self,
@@ -14,14 +14,14 @@ use crate::{
 
 pub struct Leaf<K, V> {
 	parent: usize,
-	items: StaticVec<Item<K, V>, {M+1}>
+	items: SmallVec<[Item<K, V>; M+1]>
 }
 
 impl<K, V> Default for Leaf<K, V> {
 	fn default() -> Self {
 		Self {
 			parent: usize::MAX,
-			items: StaticVec::new()
+			items: SmallVec::new()
 		}
 	}
 }

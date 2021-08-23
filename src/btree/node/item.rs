@@ -23,6 +23,11 @@ impl<K, V> Item<K, V> {
 	}
 
 	#[inline]
+	pub fn as_pair(&self) -> (&K, &V) {
+		(&self.key, &self.value)
+	}
+
+	#[inline]
 	pub fn into_inner(self) -> (K, V) {
 		unsafe {
 			// This is safe because `self` if never used/dropped after.
