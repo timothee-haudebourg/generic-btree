@@ -1,21 +1,16 @@
 use std::{
-	marker::PhantomData,
-	borrow::Borrow,
-	ops::Deref
+	marker::PhantomData
 };
 use crate::util::binary_search_min;
 use super::{
 	Storage,
 	StorageMut,
 	Offset,
-	StorageItem,
-	ItemAccess,
-	ItemRef,
-	ItemMut
+	ItemAccess
 };
 
 /// Internal node reference.
-pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
+pub trait InternalRef<S: Storage>: ItemAccess<S> {
 	/// Returns the identifer of the parent node, if any.
 	fn parent(&self) -> Option<usize>;
 
@@ -24,11 +19,11 @@ pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
 	/// If the key matches no item in this node,
 	/// this funtion returns the index and id of the child that may match the key.
 	#[inline]
-	fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, (usize, usize)> where S::Key: Borrow<Q>, Q: Ord {
+	fn offset_of<'r, Q: ?Sized>(&'r self, key: &Q) -> Result<Offset, (usize, usize)> where S::ItemRef<'r>: PartialOrd<Q> {
 		match binary_search_min(self, key) {
-			Some(i) => {
+			Some((i, eq)) => {
 				let item = self.borrow_item(i).unwrap();
-				if item.key().deref().borrow() == key {
+				if eq {
 					Ok(i)
 				} else {
 					let child_index = 1usize + i.unwrap();
@@ -108,16 +103,16 @@ pub trait InternalRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
 	}
 }
 
-pub trait InternalConst<'a, S: 'a + Storage>: InternalRef<'a, S> {
+pub trait InternalConst<'a, S: 'a + Storage>: InternalRef<S> {
 	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
 
 	#[inline]
-	fn get<Q: ?Sized>(&self, key: &Q) -> Result<S::ValueRef<'a>, usize> where S::Key: Borrow<Q>, Q: Ord {
+	fn get<'r, Q: ?Sized>(&'r self, key: &Q) -> Result<S::ItemRef<'a>, usize> where S::ItemRef<'r>: PartialOrd<Q> {
 		match binary_search_min(self, key) {
-			Some(i) => {
+			Some((i, eq)) => {
 				let item = self.item(i).unwrap();
-				if item.key().deref().borrow() == key {
-					Ok(item.value())
+				if eq {
+					Ok(item)
 				} else {
 					Err(self.child_id(1usize + i.unwrap()).unwrap())
 				}
@@ -127,15 +122,15 @@ pub trait InternalConst<'a, S: 'a + Storage>: InternalRef<'a, S> {
 	}
 
 	#[inline]
-	fn separators(&self, index: usize) -> (Option<S::KeyRef<'a>>, Option<S::KeyRef<'a>>) {
+	fn separators(&self, index: usize) -> (Option<S::ItemRef<'a>>, Option<S::ItemRef<'a>>) {
 		let min = if index > 0 {
-			self.item((index - 1).into()).map(|item| item.key())
+			self.item((index - 1).into())
 		} else {
 			None
 		};
 
 		let max = if index < self.child_count() {
-			self.item(index.into()).map(|item| item.key())
+			self.item(index.into())
 		} else {
 			None
 		};
@@ -144,21 +139,7 @@ pub trait InternalConst<'a, S: 'a + Storage>: InternalRef<'a, S> {
 	}
 }
 
-// impl<'a, T, S: 'a + Storage> InternalRef<'a, S> for &'a mut T where for<'b> &'b T: InternalRef<'b, S> {
-// 	fn parent(&self) -> Option<usize> {
-// 		self.parent()
-// 	}
-
-// 	fn child_id(&self, index: usize) -> Option<usize> {
-// 		self.child_id(index)
-// 	}
-
-// 	fn max_capacity(&self) -> usize {
-// 		self.max_capacity()
-// 	}
-// }
-
-pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<'a, S> {
+pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<S> {
 	fn set_parent(&mut self, parent: Option<usize>);
 
 	fn set_first_child(&mut self, id: usize);
@@ -166,22 +147,22 @@ pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<'a, S> {
 	/// Returns a mutable reference to the item with the given offset in the node.
 	fn into_item_mut(self, offset: Offset) -> Option<S::ItemMut<'a>>;
 
-	fn insert(&mut self, offset: Offset, item: StorageItem<S>, right_child_id: usize);
+	fn insert(&mut self, offset: Offset, item: S::Item, right_child_id: usize);
 
-	fn remove(&mut self, offset: Offset) -> (StorageItem<S>, usize);
+	fn remove(&mut self, offset: Offset) -> (S::Item, usize);
 
-	fn replace(&mut self, offset: Offset, item: StorageItem<S>) -> StorageItem<S>;
+	fn replace(&mut self, offset: Offset, item: S::Item) -> S::Item;
 
-	fn append(&mut self, separator: StorageItem<S>, other: S::InternalNode) -> Offset;
+	fn append(&mut self, separator: S::Item, other: S::InternalNode) -> Offset;
 
 	#[inline]
-	fn get_mut<Q: ?Sized>(self, key: &Q) -> Result<S::ValueMut<'a>, usize> where <S as Storage>::Key: Borrow<Q>, Q: Ord {
+	fn get_mut<Q: ?Sized>(self, key: &Q) -> Result<S::ItemMut<'a>, usize> where for<'r> <S as Storage>::ItemRef<'r>: PartialOrd<Q> {
 		match binary_search_min(&self, key) {
-			Some(i) => {
+			Some((i, eq)) => {
 				let child_id = self.child_id(1usize + i.unwrap());
 				let item = self.into_item_mut(i).unwrap();
-				if item.key().deref().borrow() == key {
-					Ok(item.into_value_mut())
+				if eq {
+					Ok(item)
 				} else {
 					Err(child_id.unwrap())
 				}
@@ -191,7 +172,7 @@ pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<'a, S> {
 	}
 
 	#[inline]
-	fn split(&mut self) -> (usize, StorageItem<S>, S::InternalNode) {
+	fn split(&mut self) -> (usize, S::Item, S::InternalNode) {
 		use crate::btree::node::buffer::Internal;
 		assert!(self.is_overflowing()); // implies self.other_children.len() >= 4
 
@@ -232,7 +213,7 @@ pub struct Children<'b, S, R: ?Sized> {
 	storage: PhantomData<S>
 }
 
-impl<'a, 'b, S: 'a + Storage, R: InternalRef<'a, S>> Iterator for Children<'b, S, R> {
+impl<'b, S: Storage, R: InternalRef<S>> Iterator for Children<'b, S, R> {
 	type Item = usize;
 
 	fn next(&mut self) -> Option<usize> {
@@ -252,7 +233,7 @@ pub struct Items<'b, S, R: ?Sized> {
 	storage: PhantomData<S>
 }
 
-impl<'a, 'b, S: 'a + Storage, R: InternalRef<'a, S>> Iterator for Items<'b, S, R> where 'a: 'b {
+impl<'b, S: Storage, R: InternalRef<S>> Iterator for Items<'b, S, R> {
 	type Item = (usize, S::ItemRef<'b>, usize);
 
 	fn next(&mut self) -> Option<Self::Item> {

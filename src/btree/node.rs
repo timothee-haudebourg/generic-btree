@@ -34,10 +34,7 @@ pub use internal::{
 };
 pub use item::{
 	Item,
-	ItemAccess,
-	StorageItem,
-	Ref as ItemRef,
-	Mut as ItemMut
+	ItemAccess
 };
 pub use buffer::Buffer;
 
@@ -78,7 +75,7 @@ pub struct Reference<S, L, I> {
 	storage: PhantomData<S>
 }
 
-impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S, L, I> where S::Key: 'a, S::Value: 'a {
+impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> Reference<S, L, I> {
 	#[inline]
 	pub fn leaf(node: L) -> Self {
 		Self {
@@ -156,7 +153,7 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 	/// this funtion returns the index and id of the child that may match the key,
 	/// or `Err(None)` if it is a leaf.
 	#[inline]
-	pub fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, (usize, Option<usize>)> where S::Key: Borrow<Q>, Q: Ord {
+	pub fn offset_of<'r, Q: ?Sized>(&'r self, key: &Q) -> Result<Offset, (usize, Option<usize>)> where S::ItemRef<'r>: PartialOrd<Q> {
 		match &self.desc {
 			Desc::Internal(node) => match node.offset_of(key) {
 				Ok(i) => Ok(i),
@@ -259,31 +256,8 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 		}
 	}
 
-	/// Write the label of the node in the DOT format.
-	///
-	/// Requires the `dot` feature.
-	#[cfg(feature = "dot")]
-	#[inline]
-	pub fn dot_write_label<W: std::io::Write>(&self, f: &mut W) -> std::io::Result<()> where S::Key: std::fmt::Display, S::Value: std::fmt::Display {
-		match &self.desc {
-			Desc::Leaf(node) => {
-				for item in node.items() {
-					write!(f, "{{{}|{}}}|", item.key().deref(), item.value().deref())?;
-				}
-			},
-			Desc::Internal(node) => {
-				write!(f, "<c0> |")?;
-				for (i, (_, item, _right)) in node.items().enumerate() {
-					write!(f, "{{{}|<c{}> {}}} |", item.key().deref(), i, item.value().deref())?;
-				}
-			}
-		}
-
-		Ok(())
-	}
-
 	#[cfg(debug_assertions)]
-	pub fn validate(&self, id: usize, parent: Option<usize>, min: Option<S::KeyRef<'a>>, max: Option<S::KeyRef<'a>>) -> Result<(Option<S::KeyRef<'a>>, Option<S::KeyRef<'a>>), ValidationError> where S::Key: Ord {
+	pub fn validate<'a>(&self, id: usize, parent: Option<usize>, min: Option<S::ItemRef<'a>>, max: Option<S::ItemRef<'a>>) -> Result<(Option<S::ItemRef<'a>>, Option<S::ItemRef<'a>>), ValidationError> where for<'r, 's> S::ItemRef<'r>: PartialOrd<S::ItemRef<'s>> {
 		if self.parent() != parent {
 			return Err(ValidationError::WrongParent(id, self.parent(), parent))
 		}
@@ -298,14 +272,14 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 
 		for i in 1..self.item_count() {
 			let prev = i-1;
-			if self.borrow_item(i.into()).unwrap().key().deref() < self.borrow_item(prev.into()).unwrap().key().deref() {
+			if self.borrow_item(i.into()).unwrap() < self.borrow_item(prev.into()).unwrap() {
 				return Err(ValidationError::UnsortedNode(id))
 			}
 		}
 
 		if let Some(min) = &min {
 			if let Some(item) = self.borrow_first_item() {
-				if min.deref() >= &item.key() {
+				if min >= &item {
 					return Err(ValidationError::UnsortedFromLeft(id))
 				}
 			}
@@ -313,7 +287,7 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 
 		if let Some(max) = &max {
 			if let Some(item) = self.borrow_last_item() {
-				if max.deref() <= &item.key() {
+				if max <= &item {
 					return Err(ValidationError::UnsortedFromRight(id))
 				}
 			}
@@ -323,9 +297,33 @@ impl<'a, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Reference<S,
 	}
 }
 
+#[cfg(feature = "dot")]
+impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> crate::dot::Display for Reference<S, L, I> where for<'r> S::ItemRef<'r>: crate::dot::Display {
+	#[inline]
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		match &self.desc {
+			Desc::Leaf(node) => {
+				for item in node.items() {
+					write!(f, "{{{}}}|", item.dot())?
+					// write!(f, "{{{}|{}}}|", item.key().deref(), item.value().deref())?;
+				}
+			},
+			Desc::Internal(node) => {
+				write!(f, "<c0> |")?;
+				for (i, (_, item, _right)) in node.items().enumerate() {
+					write!(f, "{{{}}}|", item.dot())?
+					// write!(f, "{{{}|<c{}> {}}} |", item.key().deref(), i, item.value().deref())?;
+				}
+			}
+		}
+
+		Ok(())
+	}
+}
+
 pub type Ref<'a, S> = Reference<S, <S as Storage>::LeafRef<'a>, <S as Storage>::InternalRef<'a>>;
 
-impl<'a, S: 'a + Storage, L: LeafConst<'a, S>, I: InternalConst<'a, S>> Reference<S, L, I> where S::Key: 'a, S::Value: 'a {
+impl<'a, S: 'a + Storage, L: LeafConst<'a, S>, I: InternalConst<'a, S>> Reference<S, L, I> {
 	/// Returns a reference to the item with the given offset in the node.
 	pub fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>> {
 		match &self.desc {
@@ -345,7 +343,7 @@ impl<'a, S: 'a + Storage, L: LeafConst<'a, S>, I: InternalConst<'a, S>> Referenc
 	}
 
 	#[inline]
-	pub fn get<Q: ?Sized>(&self, key: &Q) -> Result<Option<S::ValueRef<'a>>, usize> where S::Key: Borrow<Q>, Q: Ord {
+	pub fn get<'r, Q: ?Sized>(&'r self, key: &Q) -> Result<Option<S::ItemRef<'a>>, usize> where S::ItemRef<'r>: PartialOrd<Q> {
 		match &self.desc {
 			Desc::Leaf(leaf) => Ok(leaf.get(key)),
 			Desc::Internal(node) => match node.get(key) {
@@ -356,7 +354,7 @@ impl<'a, S: 'a + Storage, L: LeafConst<'a, S>, I: InternalConst<'a, S>> Referenc
 	}
 
 	#[inline]
-	pub fn separators(&self, i: usize) -> (Option<S::KeyRef<'a>>, Option<S::KeyRef<'a>>) {
+	pub fn separators(&self, i: usize) -> (Option<S::ItemRef<'a>>, Option<S::ItemRef<'a>>) {
 		match &self.desc {
 			Desc::Leaf(_) => (None, None),
 			Desc::Internal(node) => node.separators(i)
@@ -366,7 +364,7 @@ impl<'a, S: 'a + Storage, L: LeafConst<'a, S>, I: InternalConst<'a, S>> Referenc
 
 pub type Mut<'a, S> = Reference<S, <S as StorageMut>::LeafMut<'a>, <S as StorageMut>::InternalMut<'a>>;
 
-impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference<S, L, I> where S::Key: 'a, S::Value: 'a {
+impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference<S, L, I> {
 	/// Sets the parent node id.
 	pub fn set_parent(&mut self, parent: Option<usize>) {
 		match &mut self.desc {
@@ -399,7 +397,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	}
 
 	#[inline]
-	pub fn into_get_mut<Q: ?Sized>(self, key: &Q) -> Result<Option<S::ValueMut<'a>>, usize> where S::Key: Borrow<Q>, Q: Ord {
+	pub fn into_get_mut<Q: ?Sized>(self, key: &Q) -> Result<Option<S::ItemMut<'a>>, usize> where for<'r> S::ItemRef<'r>: PartialOrd<Q>, Self: 'a {
 		match self.desc {
 			Desc::Leaf(leaf) => Ok(leaf.get_mut(key)),
 			Desc::Internal(node) => match node.get_mut(key) {
@@ -417,7 +415,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	/// 
 	/// This may panics if the offset if greater than the current item count or
 	/// if this is an internal node and `right_child_id` is `None`.
-	pub fn insert(&mut self, offset: Offset, item: StorageItem<S>, right_child_id: Option<usize>) {
+	pub fn insert(&mut self, offset: Offset, item: S::Item, right_child_id: Option<usize>) {
 		match &mut self.desc {
 			Desc::Leaf(node) => node.insert(offset, item),
 			Desc::Internal(node) => node.insert(offset, item, right_child_id.unwrap())
@@ -427,7 +425,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	/// Removes the item at the given offset and returns it
 	/// along with the identifier of its associated right child
 	/// if the node is an internal node.
-	pub fn remove(&mut self, offset: Offset) -> (StorageItem<S>, Option<usize>) {
+	pub fn remove(&mut self, offset: Offset) -> (S::Item, Option<usize>) {
 		match &mut self.desc {
 			Desc::Leaf(node) => {
 				let item = node.remove(offset);
@@ -441,7 +439,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	}
 
 	#[inline]
-	pub fn leaf_remove(&mut self, offset: Offset) -> Option<Result<Item<S::Key, S::Value>, usize>> {
+	pub fn leaf_remove(&mut self, offset: Offset) -> Option<Result<S::Item, usize>> {
 		match &mut self.desc {
 			Desc::Internal(node) => {
 				if offset < node.item_count() {
@@ -462,7 +460,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	}
 
 	#[inline]
-	pub fn remove_rightmost_leaf(&mut self) -> Result<Item<S::Key, S::Value>, usize> {
+	pub fn remove_rightmost_leaf(&mut self) -> Result<S::Item, usize> {
 		match &mut self.desc {
 			Desc::Internal(node) => {
 				let child_index = node.child_count() - 1;
@@ -474,14 +472,14 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	}
 
 	#[inline]
-	pub fn push_left(&mut self, child_id: Option<usize>, item: StorageItem<S>) {
+	pub fn push_left(&mut self, child_id: Option<usize>, item: S::Item) {
 		self.insert(0.into(), item, self.first_child_id());
 		self.set_first_child(child_id);
 	}
 
 	/// Remove the first item of the node unless it would undeflow.
 	#[inline]
-	pub fn pop_left(&mut self) -> Result<(Option<usize>, StorageItem<S>), WouldUnderflow> {
+	pub fn pop_left(&mut self) -> Result<(Option<usize>, S::Item), WouldUnderflow> {
 		if self.item_count() <= self.min_capacity() {
 			Err(WouldUnderflow)
 		} else {
@@ -493,14 +491,14 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	}
 
 	#[inline]
-	pub fn push_right(&mut self, item: StorageItem<S>, child_id: Option<usize>) -> Offset {
+	pub fn push_right(&mut self, item: S::Item, child_id: Option<usize>) -> Offset {
 		let offset: Offset = self.item_count().into();
 		self.insert(offset, item, child_id);
 		offset
 	}
 
 	#[inline]
-	pub fn pop_right(&mut self) -> Result<(Offset, StorageItem<S>, Option<usize>), WouldUnderflow> {
+	pub fn pop_right(&mut self) -> Result<(Offset, S::Item, Option<usize>), WouldUnderflow> {
 		if self.item_count() <= self.min_capacity() {
 			Err(WouldUnderflow)
 		} else {
@@ -515,7 +513,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	/// # Panic
 	/// 
 	/// This function panics if no item is at the given offset.
-	pub fn replace(&mut self, offset: Offset, item: StorageItem<S>) -> StorageItem<S> {
+	pub fn replace(&mut self, offset: Offset, item: S::Item) -> S::Item {
 		match &mut self.desc {
 			Desc::Leaf(node) => node.replace(offset, item),
 			Desc::Internal(node) => node.replace(offset, item)
@@ -524,7 +522,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 
 	/// Split the node.
 	/// Return the length of the node after split, the median item and the right node.
-	pub fn split(&mut self) -> (usize, StorageItem<S>, Buffer<S>) {
+	pub fn split(&mut self) -> (usize, S::Item, Buffer<S>) {
 		match &mut self.desc {
 			Desc::Leaf(leaf) => {
 				let (len, item, right_node) = leaf.split();
@@ -541,7 +539,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	/// 
 	/// Returns the new offset of the `separator`.
 	#[inline]
-	pub fn append(&mut self, separator: StorageItem<S>, other: Buffer<S>) -> Offset {
+	pub fn append(&mut self, separator: S::Item, other: Buffer<S>) -> Offset {
 		match (&mut self.desc, other) {
 			(Desc::Internal(node), Buffer::Internal(other)) => {
 				node.append(separator, other)
@@ -559,7 +557,7 @@ pub enum Items<'b, S, L, I> {
 	Internal(internal::Items<'b, S, I>)
 }
 
-impl<'a, 'b, S: 'a + Storage, L: LeafRef<'a, S>, I: InternalRef<'a, S>> Iterator for Items<'b, S, L, I> where 'a: 'b {
+impl<'b, S: Storage, L: LeafRef<S>, I: InternalRef<S>> Iterator for Items<'b, S, L, I> {
 	type Item = (Option<usize>, S::ItemRef<'b>, Option<usize>);
 
 	#[inline]
@@ -576,7 +574,7 @@ pub enum Children<'b, S, I> {
 	Internal(internal::Children<'b, S, I>)
 }
 
-impl<'a, 'b, S: 'a + Storage, I: InternalRef<'a, S>> Iterator for Children<'b, S, I> {
+impl<'b, S: Storage, I: InternalRef<S>> Iterator for Children<'b, S, I> {
 	type Item = usize;
 
 	#[inline]

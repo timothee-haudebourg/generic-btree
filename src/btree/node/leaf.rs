@@ -8,24 +8,22 @@ use super::{
 	Storage,
 	StorageMut,
 	Offset,
-	StorageItem,
 	ItemAccess,
-	ItemRef,
-	ItemMut
+	item::Replace
 };
 
 /// Leaf node reference.
-pub trait LeafRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
+pub trait LeafRef<S: Storage>: ItemAccess<S> {
 	/// Returns the identifer of the parent node, if any.
 	fn parent(&self) -> Option<usize>;
 
 	/// Find the offset of the item matching the given key.
 	#[inline]
-	fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, Offset> where S::Key: Borrow<Q>, Q: Ord {
+	fn offset_of<'r, Q: ?Sized>(&'r self, key: &Q) -> Result<Offset, Offset> where S::ItemRef<'r>: PartialOrd<Q> {
 		match binary_search_min(self, key) {
-			Some(i) => {
+			Some((i, eq)) => {
 				let item = self.borrow_item(i).unwrap();
-				if item.key().deref().borrow() == key {
+				if eq {
 					Ok(i.into())
 				} else {
 					Err((i+1).into())
@@ -75,16 +73,16 @@ pub trait LeafRef<'a, S: 'a + Storage>: ItemAccess<'a, S> {
 }
 
 /// Leaf node reference.
-pub trait LeafConst<'a, S: 'a + Storage>: LeafRef<'a, S> {
+pub trait LeafConst<'a, S: 'a + Storage>: LeafRef<S> {
 	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
 
 	#[inline]
-	fn get<Q: ?Sized>(&self, key: &Q) -> Option<S::ValueRef<'a>> where S::Key: Borrow<Q>, Q: Ord {
+	fn get<'r, Q: ?Sized>(&'r self, key: &Q) -> Option<S::ItemRef<'a>> where S::ItemRef<'r>: PartialOrd<Q> {
 		match binary_search_min(self, key) {
-			Some(i) => {
+			Some((i, eq)) => {
 				let item = self.item(i).unwrap();
-				if item.key().deref().borrow() == key {
-					Some(item.value())
+				if eq {
+					Some(item)
 				} else {
 					None
 				}
@@ -94,7 +92,7 @@ pub trait LeafConst<'a, S: 'a + Storage>: LeafRef<'a, S> {
 	}
 }
 
-pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<'a, S> {
+pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<S> {
 	fn set_parent(&mut self, parent: Option<usize>);
 
 	/// Returns a mutable reference to the item with the given offset in the node.
@@ -102,30 +100,29 @@ pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<'a, S> {
 
 	fn into_item_mut(self, offset: Offset) -> Option<S::ItemMut<'a>>;
 
-	fn insert(&mut self, offset: Offset, item: StorageItem<S>);
+	fn insert(&mut self, offset: Offset, item: S::Item);
 
-	fn remove(&mut self, offset: Offset) -> StorageItem<S>;
+	fn remove(&mut self, offset: Offset) -> S::Item;
 
 	#[inline]
-	fn remove_last(&mut self) -> StorageItem<S> {
+	fn remove_last(&mut self) -> S::Item {
 		let offset = (self.item_count() - 1).into();
 		self.remove(offset)
 	}
 
-	fn replace(&mut self, offset: Offset, item: StorageItem<S>) -> StorageItem<S> {
+	fn replace(&mut self, offset: Offset, item: S::Item) -> S::Item {
 		self.item_mut(offset).unwrap().replace(item)
 	}
 
-	fn append(&mut self, separator: StorageItem<S>, other: S::LeafNode) -> Offset;
+	fn append(&mut self, separator: S::Item, other: S::LeafNode) -> Offset;
 
 	#[inline]
-	fn get_mut<Q: ?Sized>(self, key: &Q) -> Option<S::ValueMut<'a>> where S::Key: Borrow<Q>, Q: Ord {
-		use crate::btree::node::item::Mut;
+	fn get_mut<Q: ?Sized>(self, key: &Q) -> Option<S::ItemMut<'a>> where for<'r> S::ItemRef<'r>: PartialOrd<Q> {
 		match binary_search_min(&self, key) {
-			Some(i) => {
+			Some((i, eq)) => {
 				let item = self.into_item_mut(i).unwrap();
-				if item.key().deref().borrow() == key {
-					Some(item.into_value_mut())
+				if eq {
+					Some(item)
 				} else {
 					None
 				}
@@ -135,7 +132,7 @@ pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<'a, S> {
 	}
 
 	#[inline]
-	fn split(&mut self) -> (usize, StorageItem<S>, S::LeafNode) {
+	fn split(&mut self) -> (usize, S::Item, S::LeafNode) {
 		use crate::btree::node::buffer::Leaf;
 		assert!(self.is_overflowing());
 
@@ -175,7 +172,7 @@ pub struct Items<'b, S, R: ?Sized> {
 	storage: PhantomData<S>
 }
 
-impl<'a, 'b, S: 'a + Storage, R: LeafRef<'a, S>> Iterator for Items<'b, S, R> where 'a: 'b {
+impl<'b, S: Storage, R: LeafRef<S>> Iterator for Items<'b, S, R> {
 	type Item = S::ItemRef<'b>;
 
 	fn next(&mut self) -> Option<Self::Item> {

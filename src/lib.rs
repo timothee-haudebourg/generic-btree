@@ -3,13 +3,16 @@
 
 mod util;
 pub mod btree;
-pub mod map;
+// pub mod map;
 
-/// Default Slab-backed implementation.
-pub mod slab;
+#[cfg(feature="dot")]
+pub mod dot;
+
+// /// Default Slab-backed implementation.
+// pub mod slab;
 
 pub use btree::{
 	Storage,
 	StorageMut
 };
-pub use map::Map;
+// pub use map::Map;

@@ -6,11 +6,7 @@ use super::{
 	Storage,
 	StorageMut,
 	Address,
-	Item,
-	node::{
-		ItemRef,
-		ItemMut
-	}
+	Item
 };
 
 /// A view into a single entry in a map, which may either be vacant or occupied.

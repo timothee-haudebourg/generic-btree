@@ -12,11 +12,11 @@ pub trait Leaf<S: StorageMut>: Default {
 
 	fn item_count(&self) -> usize;
 
-	fn item(&self, offset: Offset) -> Option<&Item<S::Key, S::Value>>;
+	fn item(&self, offset: Offset) -> Option<S::ItemRef<'_>>;
 
 	fn max_capacity(&self) -> usize;
 
-	fn push_right(&mut self, item: Item<S::Key, S::Value>);
+	fn push_right(&mut self, item: S::Item);
 
 	/// Drop this leaf node without dropping the items.
 	///

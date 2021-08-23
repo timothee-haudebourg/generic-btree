@@ -1,7 +1,3 @@
-use std::{
-	borrow::Borrow,
-	ops::Deref
-};
 use crate::btree::{
 	Storage,
 	node::{
@@ -14,19 +10,19 @@ use crate::btree::{
 ///
 /// `sorted_items` is assumed to be sorted.
 #[inline]
-pub fn binary_search_min<'a, S: 'a + Storage, A: ItemAccess<'a, S> + ?Sized, Q: ?Sized>(
-	sorted_items: &A,
+pub fn binary_search_min<'r, S: Storage, A: ItemAccess<S> + ?Sized, Q: ?Sized>(
+	sorted_items: &'r A,
 	key: &Q
-) -> Option<Offset> where S::Key: Borrow<Q>, Q: Ord, S::Key: 'a, S::Value: 'a {
-	use crate::btree::node::item::Ref;
-	if sorted_items.is_empty() || sorted_items.borrow_item(0.into()).unwrap().key().deref().borrow() > key {
+) -> Option<(Offset, bool)> where S::ItemRef<'r>: PartialOrd<Q> {
+	if sorted_items.is_empty() || sorted_items.borrow_item(0.into()).unwrap() > *key {
 		None
 	} else {
 		let mut i: Offset = 0.into();
 		let mut j: Offset = (sorted_items.item_count() - 1).into();
 
-		if sorted_items.borrow_item(j).unwrap().key().deref().borrow() <= key {
-			return Some(j)
+		if sorted_items.borrow_item(j).unwrap() <= *key {
+			let eq = sorted_items.borrow_item(j).unwrap() == *key;
+			return Some((j, eq))
 		}
 
 		// invariants:
@@ -37,7 +33,7 @@ pub fn binary_search_min<'a, S: 'a + Storage, A: ItemAccess<'a, S> + ?Sized, Q: 
 		while j-i > 1 {
 			let k = (i + j) / 2;
 
-			if sorted_items.borrow_item(k).unwrap().key().deref().borrow() > key {
+			if sorted_items.borrow_item(k).unwrap() > *key {
 				j = k;
 				// sorted_items[k].key > key --> sorted_items[j] > key
 			} else {
@@ -46,6 +42,7 @@ pub fn binary_search_min<'a, S: 'a + Storage, A: ItemAccess<'a, S> + ?Sized, Q: 
 			}
 		}
 
-		Some(i)
+		let eq = sorted_items.borrow_item(i).unwrap() == *key;
+		Some((i, eq))
 	}
 }

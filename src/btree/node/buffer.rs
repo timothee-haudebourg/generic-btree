@@ -16,14 +16,14 @@ pub enum Buffer<S: StorageMut> {
 }
 
 impl<S: StorageMut> Buffer<S> {
-	pub fn leaf(parent: Option<usize>, item: Item<S::Key, S::Value>) -> Self {
+	pub fn leaf(parent: Option<usize>, item: S::Item) -> Self {
 		let mut node = S::LeafNode::default();
 		node.set_parent(parent);
 		node.push_right(item);
 		Self::Leaf(node)
 	}
 
-	pub fn binary(parent: Option<usize>, left_child: usize, item: Item<S::Key, S::Value>, right_child: usize) -> Self {
+	pub fn binary(parent: Option<usize>, left_child: usize, item: S::Item, right_child: usize) -> Self {
 		let mut node = S::InternalNode::default();
 		node.set_parent(parent);
 		node.set_first_child(left_child);

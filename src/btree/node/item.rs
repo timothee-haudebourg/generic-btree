@@ -1,13 +1,8 @@
-use std::ops::{
-	DerefMut
-};
 use super::{
 	Storage,
 	StorageMut,
 	Offset
 };
-
-pub type StorageItem<S> = Item<<S as Storage>::Key, <S as Storage>::Value>;
 
 pub struct Item<K, V> {
 	pub key: K,
@@ -58,7 +53,7 @@ impl<K, L, V, W> PartialEq<Item<L, W>> for Item<K, V> where L: PartialEq<K>, W: 
 	}
 }
 
-pub trait ItemAccess<'a, S: 'a + Storage> {
+pub trait ItemAccess<S: Storage> {
 	fn item_count(&self) -> usize;
 
 	fn is_empty(&self) -> bool {
@@ -68,77 +63,18 @@ pub trait ItemAccess<'a, S: 'a + Storage> {
 	fn borrow_item(&self, offset: Offset) -> Option<S::ItemRef<'_>>;
 }
 
-// impl<'a, T, S: 'a + Storage> ItemAccess<'a, S> for &'a mut T where for<'b> &'b T: ItemAccess<'b, S> {
-// 	fn item_count(&self) -> usize {
-// 		self.item_count()
-// 	}
-
-// 	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>> {
-// 		self.item(offset)
-// 	}
-// }
-
 /// Item reference.
-pub trait Ref<'a, S: 'a + Storage> {
-	/// Returns a reference to the item key.
-	fn key(&self) -> S::KeyRef<'a>;
-
-	/// Returns a refrence to the item value.
-	fn value(&self) -> S::ValueRef<'a>;
-
-	#[inline]
-	fn as_pair(&self) -> (S::KeyRef<'a>, S::ValueRef<'a>) {
-		(self.key(), self.value())
-	}
+pub trait Mut<S: StorageMut> {
+	fn swap(&mut self, item: &mut S::Item);
 }
 
-/// Item reference.
-pub trait Mut<'a, S: 'a + StorageMut> {
-	/// Returns a reference to the item key.
-	fn key(&self) -> S::KeyRef<'_>;
+pub trait Replace<S: StorageMut, T> {
+	fn replace(&mut self, item: T) -> S::Item;
+}
 
-	/// Returns a refrence to the item value.
-	fn value(&self) -> S::ValueRef<'_>;
-
-	#[inline]
-	fn as_pair(&self) -> (S::KeyRef<'_>, S::ValueRef<'_>) {
-		(self.key(), self.value())
-	}
-
-	/// Returns a mutable reference to the item key.
-	fn key_mut(&mut self) -> S::KeyMut<'_>;
-
-	fn into_key_mut(self) -> S::KeyMut<'a>;
-
-	/// Returns a mutable reference to the item value.
-	/// 
-	/// # Safety
-	/// 
-	/// The caller must ensure that the item has been initialized.
-	fn value_mut(&mut self) -> S::ValueMut<'_>;
-
-	fn into_value_mut(self) -> S::ValueMut<'a>;
-
-	fn into_pair_mut(self) -> (S::KeyMut<'a>, S::ValueMut<'a>);
-
-	fn swap(&mut self, item: &mut Item<S::Key, S::Value>) {
-		std::mem::swap(self.key_mut().deref_mut(), &mut item.key);
-		std::mem::swap(self.value_mut().deref_mut(), &mut item.value);
-	}
-
-	fn replace(&mut self, mut item: Item<S::Key, S::Value>) -> Item<S::Key, S::Value> {
+impl<S: StorageMut, T> Replace<S, S::Item> for T where T: Mut<S> {
+	fn replace(&mut self, mut item: S::Item) -> S::Item {
 		self.swap(&mut item);
 		item
-	}
-
-	fn set(&mut self, key: S::Key, value: S::Value) -> Item<S::Key, S::Value> {
-		let mut item = Item::new(key, value);
-		self.swap(&mut item);
-		item
-	}
-
-	fn set_value(&mut self, mut value: S::Value) -> S::Value {
-		std::mem::swap(self.value_mut().deref_mut(), &mut value);
-		value
 	}
 }

@@ -31,7 +31,6 @@ use crate::{
 		IntoValues,
 		ValuesMut,
 		node::{
-			ItemRef,
 			ItemMut
 		}
 	}

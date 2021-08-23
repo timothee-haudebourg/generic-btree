@@ -1,8 +1,7 @@
 use std::marker::PhantomData;
 use super::{
 	StorageMut,
-	Offset,
-	Item
+	Offset
 };
 
 /// Internal node buffer.
@@ -13,7 +12,7 @@ pub trait Internal<S: StorageMut>: Default {
 
 	fn item_count(&self) -> usize;
 
-	fn item(&self, offset: Offset) -> Option<&Item<S::Key, S::Value>>;
+	fn item(&self, offset: Offset) -> Option<S::ItemRef<'_>>;
 
 	fn child_count(&self) -> usize {
 		self.item_count() + 1usize
@@ -33,7 +32,7 @@ pub trait Internal<S: StorageMut>: Default {
 
 	fn set_first_child(&mut self, id: usize);
 
-	fn push_right(&mut self, item: Item<S::Key, S::Value>, child: usize);
+	fn push_right(&mut self, item: S::Item, child: usize);
 
 	/// Drop this internal node without dropping the items.
 	/// 

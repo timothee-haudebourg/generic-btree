@@ -16,10 +16,9 @@ use super::{
 	StorageMut,
 	Address,
 	node::{
-		Item,
-		ItemRef,
-		ItemMut
-	}
+		Item
+	},
+	ItemRead
 };
 
 pub struct Iter<'a, S> {
@@ -132,11 +131,11 @@ impl<S: Storage> IntoIter<S> {
 	}
 }
 
-impl<S: StorageMut> FusedIterator for IntoIter<S> { }
-impl<S: StorageMut> ExactSizeIterator for IntoIter<S> { }
+impl<S: StorageMut> FusedIterator for IntoIter<S> where for<'a> S::ItemRef<'a>: ItemRead<S> { }
+impl<S: StorageMut> ExactSizeIterator for IntoIter<S> where for<'a> S::ItemRef<'a>: ItemRead<S> { }
 
-impl<S: StorageMut> Iterator for IntoIter<S> {
-	type Item = Item<S::Key, S::Value>;
+impl<S: StorageMut> Iterator for IntoIter<S> where for<'a> S::ItemRef<'a>: ItemRead<S> {
+	type Item = S::Item;
 
 	#[inline]
 	fn size_hint(&self) -> (usize, Option<usize>) {
@@ -153,10 +152,7 @@ impl<S: StorageMut> Iterator for IntoIter<S> {
 					let item = unsafe {
 						// this is safe because the item at `self.end` exists and is never touched again.
 						let item = self.btree.item(addr).unwrap();
-						Item::new(
-							std::ptr::read(item.key().deref()),
-							std::ptr::read(item.value().deref()),
-						)
+						item.read()
 					};
 		
 					if self.len > 0 {
@@ -207,8 +203,8 @@ impl<S: StorageMut> Iterator for IntoIter<S> {
 	}
 }
 
-impl<S: StorageMut> DoubleEndedIterator for IntoIter<S> {
-	fn next_back(&mut self) -> Option<Item<S::Key, S::Value>> {
+impl<S: StorageMut> DoubleEndedIterator for IntoIter<S> where for<'a> S::ItemRef<'a>: ItemRead<S> {
+	fn next_back(&mut self) -> Option<S::Item> {
 		if self.len > 0 {
 			let addr = match self.end {
 				Some(mut addr) => {
@@ -232,10 +228,7 @@ impl<S: StorageMut> DoubleEndedIterator for IntoIter<S> {
 			let item = unsafe {
 				// this is safe because the item at `self.end` exists and is never touched again.
 				let item = self.btree.item(addr).unwrap();
-				Item::new(
-					std::ptr::read(item.key().deref()),
-					std::ptr::read(item.value().deref()),
-				)
+				item.read()
 			};
 
 			self.end = Some(addr);
@@ -269,77 +262,77 @@ impl<S: StorageMut> DoubleEndedIterator for IntoIter<S> {
 	}
 }
 
-pub struct IntoKeys<S> {
-	inner: IntoIter<S>
-}
+// pub struct IntoKeys<S> {
+// 	inner: IntoIter<S>
+// }
 
-impl<S: Storage> IntoKeys<S> {
-	pub(crate) fn new(btree: S) -> Self {
-		Self {
-			inner: IntoIter::new(btree)
-		}
-	}
-}
+// impl<S: Storage> IntoKeys<S> {
+// 	pub(crate) fn new(btree: S) -> Self {
+// 		Self {
+// 			inner: IntoIter::new(btree)
+// 		}
+// 	}
+// }
 
-impl<S: StorageMut> Iterator for IntoKeys<S> {
-	type Item = S::Key;
+// impl<S: StorageMut> Iterator for IntoKeys<S> {
+// 	type Item = S::Key;
 
-	#[inline]
-	fn size_hint(&self) -> (usize, Option<usize>) {
-		self.inner.size_hint()
-	}
+// 	#[inline]
+// 	fn size_hint(&self) -> (usize, Option<usize>) {
+// 		self.inner.size_hint()
+// 	}
 
-	#[inline]
-	fn next(&mut self) -> Option<S::Key> {
-		self.inner.next().map(|item| item.key)
-	}
-}
+// 	#[inline]
+// 	fn next(&mut self) -> Option<S::Key> {
+// 		self.inner.next().map(|item| item.key)
+// 	}
+// }
 
-impl<S: StorageMut> FusedIterator for IntoKeys<S> { }
-impl<S: StorageMut> ExactSizeIterator for IntoKeys<S> { }
+// impl<S: StorageMut> FusedIterator for IntoKeys<S> { }
+// impl<S: StorageMut> ExactSizeIterator for IntoKeys<S> { }
 
-impl<S: StorageMut> DoubleEndedIterator for IntoKeys<S> {
-	#[inline]
-	fn next_back(&mut self) -> Option<S::Key> {
-		self.inner.next_back().map(|item| item.key)
-	}
-}
+// impl<S: StorageMut> DoubleEndedIterator for IntoKeys<S> {
+// 	#[inline]
+// 	fn next_back(&mut self) -> Option<S::Key> {
+// 		self.inner.next_back().map(|item| item.key)
+// 	}
+// }
 
-pub struct IntoValues<S> {
-	inner: IntoIter<S>
-}
+// pub struct IntoValues<S> {
+// 	inner: IntoIter<S>
+// }
 
-impl<S: Storage> IntoValues<S> {
-	pub(crate) fn new(btree: S) -> Self {
-		Self {
-			inner: IntoIter::new(btree)
-		}
-	}
-}
+// impl<S: Storage> IntoValues<S> {
+// 	pub(crate) fn new(btree: S) -> Self {
+// 		Self {
+// 			inner: IntoIter::new(btree)
+// 		}
+// 	}
+// }
 
-impl<S: StorageMut> Iterator for IntoValues<S> {
-	type Item = S::Value;
+// impl<S: StorageMut> Iterator for IntoValues<S> {
+// 	type Item = S::Value;
 
-	#[inline]
-	fn size_hint(&self) -> (usize, Option<usize>) {
-		self.inner.size_hint()
-	}
+// 	#[inline]
+// 	fn size_hint(&self) -> (usize, Option<usize>) {
+// 		self.inner.size_hint()
+// 	}
 
-	#[inline]
-	fn next(&mut self) -> Option<S::Value> {
-		self.inner.next().map(|item| item.value)
-	}
-}
+// 	#[inline]
+// 	fn next(&mut self) -> Option<S::Value> {
+// 		self.inner.next().map(|item| item.value)
+// 	}
+// }
 
-impl<S: StorageMut> FusedIterator for IntoValues<S> { }
-impl<S: StorageMut> ExactSizeIterator for IntoValues<S> { }
+// impl<S: StorageMut> FusedIterator for IntoValues<S> { }
+// impl<S: StorageMut> ExactSizeIterator for IntoValues<S> { }
 
-impl<S: StorageMut> DoubleEndedIterator for IntoValues<S> {
-	#[inline]
-	fn next_back(&mut self) -> Option<S::Value> {
-		self.inner.next_back().map(|item| item.value)
-	}
-}
+// impl<S: StorageMut> DoubleEndedIterator for IntoValues<S> {
+// 	#[inline]
+// 	fn next_back(&mut self) -> Option<S::Value> {
+// 		self.inner.next_back().map(|item| item.value)
+// 	}
+// }
 
 pub struct IterMut<'a, S> {
 	/// BTree mutable reference.
@@ -425,103 +418,103 @@ impl<'a, S: StorageMut> DoubleEndedIterator for IterMut<'a, S> {
 	}
 }
 
-pub struct Keys<'a, S> {
-	inner: Iter<'a, S>
-}
+// pub struct Keys<'a, S> {
+// 	inner: Iter<'a, S>
+// }
 
-impl<'a, S: Storage> Keys<'a, S> {
-	pub(crate) fn new(storage: &'a S) -> Self {
-		Self {
-			inner: storage.iter()
-		}
-	}
-}
+// impl<'a, S: Storage> Keys<'a, S> {
+// 	pub(crate) fn new(storage: &'a S) -> Self {
+// 		Self {
+// 			inner: storage.iter()
+// 		}
+// 	}
+// }
 
-impl<'a, S: Storage> FusedIterator for Keys<'a, S> { }
-impl<'a, S: Storage> ExactSizeIterator for Keys<'a, S> { }
+// impl<'a, S: Storage> FusedIterator for Keys<'a, S> { }
+// impl<'a, S: Storage> ExactSizeIterator for Keys<'a, S> { }
 
-impl<'a, S: Storage> Iterator for Keys<'a, S> {
-	type Item = S::KeyRef<'a>;
+// impl<'a, S: Storage> Iterator for Keys<'a, S> {
+// 	type Item = S::KeyRef<'a>;
 
-	#[inline]
-	fn size_hint(&self) -> (usize, Option<usize>) {
-		self.inner.size_hint()
-	}
+// 	#[inline]
+// 	fn size_hint(&self) -> (usize, Option<usize>) {
+// 		self.inner.size_hint()
+// 	}
 
-	#[inline]
-	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.key())
-	}
-}
+// 	#[inline]
+// 	fn next(&mut self) -> Option<Self::Item> {
+// 		self.inner.next().map(|item| item.key())
+// 	}
+// }
 
-impl<'a, S: Storage> DoubleEndedIterator for Keys<'a, S> {
-	#[inline]
-	fn next_back(&mut self) -> Option<Self::Item> {
-		self.inner.next_back().map(|item| item.key())
-	}
-}
+// impl<'a, S: Storage> DoubleEndedIterator for Keys<'a, S> {
+// 	#[inline]
+// 	fn next_back(&mut self) -> Option<Self::Item> {
+// 		self.inner.next_back().map(|item| item.key())
+// 	}
+// }
 
-pub struct Values<'a, S> {
-	inner: Iter<'a, S>
-}
+// pub struct Values<'a, S> {
+// 	inner: Iter<'a, S>
+// }
 
-impl<'a, S: Storage> Values<'a, S> {
-	pub(crate) fn new(storage: &'a S) -> Self {
-		Self {
-			inner: storage.iter()
-		}
-	}
-}
+// impl<'a, S: Storage> Values<'a, S> {
+// 	pub(crate) fn new(storage: &'a S) -> Self {
+// 		Self {
+// 			inner: storage.iter()
+// 		}
+// 	}
+// }
 
-impl<'a, S: Storage> Iterator for Values<'a, S> {
-	type Item = S::ValueRef<'a>;
+// impl<'a, S: Storage> Iterator for Values<'a, S> {
+// 	type Item = S::ValueRef<'a>;
 
-	#[inline]
-	fn size_hint(&self) -> (usize, Option<usize>) {
-		self.inner.size_hint()
-	}
+// 	#[inline]
+// 	fn size_hint(&self) -> (usize, Option<usize>) {
+// 		self.inner.size_hint()
+// 	}
 
-	#[inline]
-	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.value())
-	}
-}
+// 	#[inline]
+// 	fn next(&mut self) -> Option<Self::Item> {
+// 		self.inner.next().map(|item| item.value())
+// 	}
+// }
 
-impl<'a, S: Storage> DoubleEndedIterator for Values<'a, S> {
-	#[inline]
-	fn next_back(&mut self) -> Option<Self::Item> {
-		self.inner.next_back().map(|item| item.value())
-	}
-}
+// impl<'a, S: Storage> DoubleEndedIterator for Values<'a, S> {
+// 	#[inline]
+// 	fn next_back(&mut self) -> Option<Self::Item> {
+// 		self.inner.next_back().map(|item| item.value())
+// 	}
+// }
 
-pub struct ValuesMut<'a, S> {
-	inner: IterMut<'a, S>
-}
+// pub struct ValuesMut<'a, S> {
+// 	inner: IterMut<'a, S>
+// }
 
-impl<'a, S: StorageMut> ValuesMut<'a, S> {
-	pub(crate) fn new(storage: &'a mut S) -> Self {
-		Self {
-			inner: storage.iter_mut()
-		}
-	}
-}
+// impl<'a, S: StorageMut> ValuesMut<'a, S> {
+// 	pub(crate) fn new(storage: &'a mut S) -> Self {
+// 		Self {
+// 			inner: storage.iter_mut()
+// 		}
+// 	}
+// }
 
-impl<'a, S: StorageMut> FusedIterator for ValuesMut<'a, S> { }
-impl<'a, S: StorageMut> ExactSizeIterator for ValuesMut<'a, S> { }
+// impl<'a, S: StorageMut> FusedIterator for ValuesMut<'a, S> { }
+// impl<'a, S: StorageMut> ExactSizeIterator for ValuesMut<'a, S> { }
 
-impl<'a, S: StorageMut> Iterator for ValuesMut<'a, S> {
-	type Item = S::ValueMut<'a>;
+// impl<'a, S: StorageMut> Iterator for ValuesMut<'a, S> {
+// 	type Item = S::ValueMut<'a>;
 
-	#[inline]
-	fn size_hint(&self) -> (usize, Option<usize>) {
-		self.inner.size_hint()
-	}
+// 	#[inline]
+// 	fn size_hint(&self) -> (usize, Option<usize>) {
+// 		self.inner.size_hint()
+// 	}
 
-	#[inline]
-	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into_value_mut())
-	}
-}
+// 	#[inline]
+// 	fn next(&mut self) -> Option<Self::Item> {
+// 		self.inner.next().map(|item| item.into_value_mut())
+// 	}
+// }
 
 fn is_valid_range<T, R>(range: &R) -> bool where T: Ord + ?Sized, R: RangeBounds<T> {
 	match (range.start_bound(), range.end_bound()) {
@@ -546,7 +539,7 @@ pub struct Range<'a, S> {
 }
 
 impl<'a, S: Storage> Range<'a, S> {
-	pub(crate) fn new<T, R>(btree: &'a S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, S::Key: Borrow<T> {
+	pub(crate) fn new<T, R>(btree: &'a S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, for<'r> S::ItemRef<'r>: PartialOrd<T> {
 		if !is_valid_range(&range) {
 			panic!("Invalid range")
 		}
@@ -633,7 +626,7 @@ pub struct RangeMut<'a, S> {
 }
 
 impl<'a, S: StorageMut> RangeMut<'a, S> {
-	pub(crate) fn new<T, R>(btree: &'a mut S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, S::Key: Borrow<T> {
+	pub(crate) fn new<T, R>(btree: &'a mut S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, for<'r> S::ItemRef<'r>: PartialOrd<T> {
 		if !is_valid_range(&range) {
 			panic!("Invalid range")
 		}
@@ -747,7 +740,7 @@ impl<'a, S: StorageMut> DrainFilterInner<'a, S> {
 	}
 
 	#[inline]
-	pub fn next<F>(&mut self, pred: &mut F) -> Option<Item<S::Key, S::Value>> where F: FnMut(S::ItemMut<'_>) -> bool {
+	pub fn next<F>(&mut self, pred: &mut F) -> Option<S::Item> where F: FnMut(S::ItemMut<'_>) -> bool {
 		loop {
 			let remove = self.btree.item_mut(self.addr).map(|item| (*pred)(item));
 
@@ -770,7 +763,7 @@ impl<'a, S: StorageMut> DrainFilterInner<'a, S> {
 	}
 
 	#[inline]
-	pub fn next_consume<F>(&mut self, mut pred: F) -> Option<Item<S::Key, S::Value>> where F: FnMut(S::ItemMut<'_>) -> bool {
+	pub fn next_consume<F>(&mut self, mut pred: F) -> Option<S::Item> where F: FnMut(S::ItemMut<'_>) -> bool {
 		eprintln!("next_consume");
 		loop {
 			let remove = self.btree.item_mut(self.addr).map(|item| pred(item));
@@ -813,7 +806,7 @@ impl<'a, S: StorageMut, F> DrainFilter<'a, S, F> where F: FnMut(S::ItemMut<'_>) 
 impl<'a, S: StorageMut, F> FusedIterator for DrainFilter<'a, S, F> where F: FnMut(S::ItemMut<'_>) -> bool { }
 
 impl<'a, S: StorageMut, F> Iterator for DrainFilter<'a, S, F> where F: FnMut(S::ItemMut<'_>) -> bool {
-	type Item = Item<S::Key, S::Value>;
+	type Item = S::Item;
 
 	#[inline]
 	fn size_hint(&self) -> (usize, Option<usize>) {
