@@ -9,7 +9,7 @@ pub mod btree;
 pub mod dot;
 
 // /// Default Slab-backed implementation.
-// pub mod slab;
+pub mod slab;
 
 pub use btree::{
 	Storage,

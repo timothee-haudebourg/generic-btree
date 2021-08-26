@@ -6,18 +6,17 @@ use crate::{
 	},
 	slab::{
 		M,
-		Item,
 		Node,
 		Storage
 	}
 };
 
-pub struct Leaf<K, V> {
+pub struct Leaf<T> {
 	parent: usize,
-	items: SmallVec<[Item<K, V>; M+1]>
+	items: SmallVec<[T; M+1]>
 }
 
-impl<K, V> Default for Leaf<K, V> {
+impl<T> Default for Leaf<T> {
 	fn default() -> Self {
 		Self {
 			parent: usize::MAX,
@@ -26,7 +25,7 @@ impl<K, V> Default for Leaf<K, V> {
 	}
 }
 
-impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Leaf<'s, &'s mut Storage<K, V, S>> for Leaf<K, V> {
+impl<T, S: cc_traits::SlabMut<Node<T>>> btree::node::buffer::Leaf<Storage<T, S>> for Leaf<T> {
 	fn parent(&self) -> Option<usize> {
 		if self.parent == usize::MAX {
 			None
@@ -43,7 +42,7 @@ impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Leaf<'s, 
 		self.items.len()
 	}
 
-	fn item(&self, offset: Offset) -> Option<&Item<K, V>> {
+	fn item<'a>(&'a self, offset: Offset) -> Option<&'a T> where Storage<T, S>: 'a {
 		self.items.get(offset.unwrap())
 	}
 
@@ -51,7 +50,7 @@ impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Leaf<'s, 
 		M+1
 	}
 
-	fn push_right(&mut self, item: Item<K, V>) {
+	fn push_right(&mut self, item: T) {
 		self.items.push(item)
 	}
 
@@ -60,19 +59,19 @@ impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Leaf<'s, 
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, &'a Storage<K, V, S>> for &'a Leaf<K, V> {
+impl<'a, T, S: 'a + cc_traits::Slab<Node<T>>> btree::node::ItemAccess<Storage<T, S>> for &'a Leaf<T> {
 	/// Returns the current number of items stored in this node.
 	fn item_count(&self) -> usize {
 		self.items.len()
 	}
 
 	/// Returns a reference to the item with the given offset in the node.
-	fn borrow_item(&self, offset: Offset) -> Option<&Item<K, V>> {
+	fn borrow_item(&self, offset: Offset) -> Option<&T> {
 		self.items.get(offset.unwrap())
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, &'a Storage<K, V, S>> for &'a Leaf<K, V> {
+impl<'a, T, S: 'a + cc_traits::Slab<Node<T>>> btree::node::LeafRef<Storage<T, S>> for &'a Leaf<T> {
 	fn parent(&self) -> Option<usize> {
 		if self.parent == usize::MAX {
 			None
@@ -86,25 +85,25 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, &'a
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafConst<'a, &'a Storage<K, V, S>> for &'a Leaf<K, V> {
-	fn item(&self, offset: Offset) -> Option<&'a Item<K, V>> {
+impl<'a, T, S: 'a + cc_traits::Slab<Node<T>>> btree::node::LeafConst<'a, Storage<T, S>> for &'a Leaf<T> {
+	fn item(&self, offset: Offset) -> Option<&'a T> {
 		self.items.get(offset.unwrap())
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, &'a Storage<K, V, S>> for &'a mut Leaf<K, V> {
+impl<'a, T, S: 'a + cc_traits::Slab<Node<T>>> btree::node::ItemAccess<Storage<T, S>> for &'a mut Leaf<T> {
 	/// Returns the current number of items stored in this node.
 	fn item_count(&self) -> usize {
 		self.items.len()
 	}
 
 	/// Returns a reference to the item with the given offset in the node.
-	fn borrow_item(&self, offset: Offset) -> Option<&Item<K, V>> {
+	fn borrow_item(&self, offset: Offset) -> Option<&T> {
 		self.items.get(offset.unwrap())
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, &'a Storage<K, V, S>> for &'a mut Leaf<K, V> {
+impl<'a, T, S: 'a + cc_traits::Slab<Node<T>>> btree::node::LeafRef<Storage<T, S>> for &'a mut Leaf<T> {
 	fn parent(&self) -> Option<usize> {
 		if self.parent == usize::MAX {
 			None
@@ -118,28 +117,28 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, &'a
 	}
 }
 
-impl<'r, 's, K, V, S: 's + cc_traits::SlabMut<Node<K, V>>> btree::node::LeafMut<'r, 's, &'s mut Storage<K, V, S>> for &'r mut Leaf<K, V> {
+impl<'r, T, S: 'r + cc_traits::SlabMut<Node<T>>> btree::node::LeafMut<'r, Storage<T, S>> for &'r mut Leaf<T> {
 	fn set_parent(&mut self, parent: Option<usize>) {
 		self.parent = parent.unwrap_or(usize::MAX)
 	}
 
-	fn item_mut(&mut self, offset: Offset) -> Option<&mut Item<K, V>> {
+	fn item_mut(&mut self, offset: Offset) -> Option<&mut T> {
 		self.items.get_mut(offset.unwrap())
 	}
 
-	fn into_item_mut(self, offset: Offset) -> Option<&'r mut Item<K, V>> {
+	fn into_item_mut(self, offset: Offset) -> Option<&'r mut T> {
 		self.items.get_mut(offset.unwrap())
 	}
 
-	fn insert(&mut self, offset: Offset, item: Item<K, V>) {
+	fn insert(&mut self, offset: Offset, item: T) {
 		self.items.insert(offset.unwrap(), item)
 	}
 
-	fn remove(&mut self, offset: Offset) -> Item<K, V> {
+	fn remove(&mut self, offset: Offset) -> T {
 		self.items.remove(offset.unwrap())
 	}
 
-	fn append(&mut self, separator: Item<K, V>, mut other: Leaf<K, V>) -> Offset {
+	fn append(&mut self, separator: T, mut other: Leaf<T>) -> Offset {
 		let offset = self.items.len().into();
 		self.items.push(separator);
 		self.items.append(&mut other.items);

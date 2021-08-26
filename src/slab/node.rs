@@ -11,13 +11,13 @@ mod internal;
 pub use leaf::Leaf;
 pub use internal::Internal;
 
-pub enum Node<K, V> {
-	Internal(Internal<K, V>),
-	Leaf(Leaf<K, V>)
+pub enum Node<T> {
+	Internal(Internal<T>),
+	Leaf(Leaf<T>)
 }
 
-impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> From<Buffer<'s, &'s mut Storage<K, V, S>>> for Node<K, V> {
-	fn from(node: Buffer<'s, &'s mut Storage<K, V, S>>) -> Self {
+impl<T, S: cc_traits::SlabMut<Node<T>>> From<Buffer<Storage<T, S>>> for Node<T> {
+	fn from(node: Buffer<Storage<T, S>>) -> Self {
 		match node {
 			Buffer::Internal(node) => Self::Internal(node),
 			Buffer::Leaf(node) => Self::Leaf(node)
@@ -25,8 +25,8 @@ impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> From<Buffer<'s, &'s mut Storag
 	}
 }
 
-impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> From<Node<K, V>> for Buffer<'s, &'s mut Storage<K, V, S>> {
-	fn from(node: Node<K, V>) -> Self {
+impl<T, S: cc_traits::SlabMut<Node<T>>> From<Node<T>> for Buffer<Storage<T, S>> {
+	fn from(node: Node<T>) -> Self {
 		match node {
 			Node::Internal(node) => Self::Internal(node),
 			Node::Leaf(node) => Self::Leaf(node)
@@ -34,8 +34,8 @@ impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> From<Node<K, V>> for Buffer<'s
 	}
 }
 
-impl<'s, K, V, S: 's + cc_traits::Slab<Node<K, V>>> From<&'s Node<K, V>> for Ref<'s, &'s Storage<K, V, S>> {
-	fn from(n: &'s Node<K, V>) -> Self {
+impl<'r, T, S: 'r + cc_traits::Slab<Node<T>>> From<&'r Node<T>> for Ref<'r, Storage<T, S>> {
+	fn from(n: &'r Node<T>) -> Self {
 		match n {
 			Node::Internal(node) => Self::internal(node),
 			Node::Leaf(node) => Self::leaf(node)
@@ -43,12 +43,11 @@ impl<'s, K, V, S: 's + cc_traits::Slab<Node<K, V>>> From<&'s Node<K, V>> for Ref
 	}
 }
 
-impl<'r, 's: 'r, K, V, S: 's + cc_traits::SlabMut<Node<K, V>>> From<&'r mut Node<K, V>> for Mut<'r, 's, &'s mut Storage<K, V, S>> {
-	fn from(n: &'r mut Node<K, V>) -> Self {
-		// match n {
-		// 	Node::Internal(node) => Self::internal(node),
-		// 	Node::Leaf(node) => Self::leaf(node)
-		// }
-		panic!("TODO")
+impl<'r, T, S: 'r + cc_traits::SlabMut<Node<T>>> From<&'r mut Node<T>> for Mut<'r, Storage<T, S>> {
+	fn from(n: &'r mut Node<T>) -> Self {
+		match n {
+			Node::Internal(node) => Self::internal(node),
+			Node::Leaf(node) => Self::leaf(node)
+		}
 	}
 }

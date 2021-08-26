@@ -1,55 +1,42 @@
 use std::marker::PhantomData;
-use slab::Slab;
-use crate::{
-	btree::{
-		self,
-		node::{
-			Buffer,
-			Mut as NodeMut
-		}
+use crate::btree::{
+	self,
+	node::{
+		Buffer,
+		Mut as NodeMut
 	}
 };
 
-mod item;
 pub mod node;
-
-pub use item::Item;
 pub use node::Node;
 
-pub type Map<K, V> = crate::Map<Storage<K, V, Slab<Node<K, V>>>>;
+// pub type Map<K, V> = crate::Map<Storage<K, V, Slab<Node<K, V>>>>;
 
 const M: usize = 8;
 
 /// Slab storage.
-pub struct Storage<K, V, S> {
+pub struct Storage<T, S> {
 	slab: S,
 	root: Option<usize>,
 	len: usize,
-	key: PhantomData<K>,
-	value: PhantomData<V>
+	item: PhantomData<T>
 }
 
-impl<K, V, S: Default> Default for Storage<K, V, S> {
+impl<T, S: Default> Default for Storage<T, S> {
 	fn default() -> Self {
 		Self {
 			slab: S::default(),
 			root: None,
 			len: 0,
-			key: PhantomData,
-			value: PhantomData
+			item: PhantomData,
 		}
 	}
 }
 
-impl<K, V, S: cc_traits::Slab<Node<K, V>>> btree::Storage for Storage<K, V, S> {
-	type Key = K;
-	type Value = V;
-
-	type KeyRef<'r> where K: 'r = &'r K;
-	type ValueRef<'r> where V: 'r = &'r V;
-	type LeafRef<'r> where S: 'r, V: 'r, K: 'r = &'r node::Leaf<Self::Key, Self::Value>;
-	type InternalRef<'r> where S: 'r, V: 'r, K: 'r = &'r node::Internal<Self::Key, Self::Value>;
-	type ItemRef<'r> where S: 'r, V: 'r, K: 'r = &'r Item<Self::Key, Self::Value>;
+impl<T, S: cc_traits::Slab<Node<T>>> btree::Storage for Storage<T, S> {
+	type ItemRef<'r> where S: 'r, T: 'r = &'r T;
+	type LeafRef<'r> where S: 'r, T: 'r = &'r node::Leaf<T>;
+	type InternalRef<'r> where S: 'r, T: 'r = &'r node::Internal<T>;
 
 	fn root(&self) -> Option<usize> {
 		self.root
@@ -59,20 +46,19 @@ impl<K, V, S: cc_traits::Slab<Node<K, V>>> btree::Storage for Storage<K, V, S> {
 		self.len
 	}
 
-	fn node<'r>(&'r self, id: usize) -> Option<btree::node::Ref<'r, Self>> where V: 'r, K: 'r {
+	fn node(&self, id: usize) -> Option<btree::node::Ref<'_, Self>> {
 		self.slab.get(id).map(|node| node.into())
 	}
 }
 
-unsafe impl<K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::StorageMut for Storage<K, V, S> {
-	type LeafNode = node::Leaf<K, V>;
-	type InternalNode = node::Internal<K, V>;
+unsafe impl<T, S: cc_traits::SlabMut<Node<T>>> btree::StorageMut for Storage<T, S> {
+	type Item = T;
+	type LeafNode = node::Leaf<T>;
+	type InternalNode = node::Internal<T>;
 	
-	type KeyMut<'r> where K: 'r = &'r mut K;
-	type ValueMut<'r> where V: 'r = &'r mut V;
-	type LeafMut<'r> where S: 'r, K: 'r, V: 'r = &'r mut node::Leaf<K, V>;
-	type InternalMut<'r> where S: 'r, K: 'r, V: 'r = &'r mut node::Internal<K, V>;
-	type ItemMut<'r> where S: 'r, K: 'r, V: 'r = &'r mut Item<K, V>;
+	type ItemMut<'r> where S: 'r, T: 'r = &'r mut T;
+	type LeafMut<'r> where S: 'r, T: 'r = &'r mut node::Leaf<T>;
+	type InternalMut<'r> where S: 'r, T: 'r = &'r mut node::Internal<T>;
 
 	fn set_root(&mut self, root: Option<usize>) {
 		self.root = root
@@ -92,5 +78,11 @@ unsafe impl<K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::StorageMut for Stora
 
 	fn node_mut(&mut self, id: usize) -> Option<NodeMut<Self>> {
 		self.slab.get_mut(id).map(|node| node.into())
+	}
+}
+
+impl<'a, T, S: cc_traits::SlabMut<Node<T>>> btree::node::item::Mut<Storage<T, S>> for &'a mut T {
+	fn swap(&mut self, other: &mut T) {
+		std::mem::swap(*self, other)
 	}
 }

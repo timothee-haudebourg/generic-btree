@@ -6,24 +6,23 @@ use crate::{
 	},
 	slab::{
 		M,
-		Item,
 		Node,
 		Storage
 	}
 };
 
-struct Branch<K, V> {
-	item: Item<K, V>,
+struct Branch<T> {
+	item: T,
 	child_id: usize
 }
 
-pub struct Internal<K, V> {
+pub struct Internal<T> {
 	parent: usize,
 	first_child_id: usize,
-	branches: SmallVec<[Branch<K, V>; M]>
+	branches: SmallVec<[Branch<T>; M]>
 }
 
-impl<K, V> Default for Internal<K, V> {
+impl<T> Default for Internal<T> {
 	fn default() -> Self {
 		Self {
 			parent: usize::MAX,
@@ -33,7 +32,7 @@ impl<K, V> Default for Internal<K, V> {
 	}
 }
 
-impl<K, V> Internal<K, V> {
+impl<T> Internal<T> {
 	fn parent(&self) -> Option<usize> {
 		if self.parent == usize::MAX {
 			None
@@ -50,7 +49,7 @@ impl<K, V> Internal<K, V> {
 		self.branches.len()
 	}
 
-	fn item(&self, offset: Offset) -> Option<&Item<K, V>> {
+	fn item(&self, offset: Offset) -> Option<&T> {
 		self.branches.get(offset.unwrap()).map(|b| &b.item)
 	}
 
@@ -70,7 +69,7 @@ impl<K, V> Internal<K, V> {
 		self.first_child_id = id;
 	}
 
-	fn push_right(&mut self, item: Item<K, V>, child: usize) {
+	fn push_right(&mut self, item: T, child: usize) {
 		self.branches.push(Branch {
 			item,
 			child_id: child
@@ -78,7 +77,7 @@ impl<K, V> Internal<K, V> {
 	}
 }
 
-impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Internal<'s, &'s mut Storage<K, V, S>> for Internal<K, V> {
+impl<'s, T, S: cc_traits::SlabMut<Node<T>>> btree::node::buffer::Internal<Storage<T, S>> for Internal<T> {
 	fn parent(&self) -> Option<usize> {
 		self.parent()
 	}
@@ -91,7 +90,7 @@ impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Internal<
 		self.item_count()
 	}
 
-	fn item(&self, offset: Offset) -> Option<&Item<K, V>> {
+	fn item<'a>(&'a self, offset: Offset) -> Option<&'a T> where Storage<T, S>: 'a {
 		self.item(offset)
 	}
 
@@ -107,7 +106,7 @@ impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Internal<
 		self.set_first_child(id)
 	}
 
-	fn push_right(&mut self, item: Item<K, V>, child: usize) {
+	fn push_right(&mut self, item: T, child: usize) {
 		self.push_right(item, child)
 	}
 
@@ -116,19 +115,19 @@ impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Internal<
 	}
 }
 
-impl<'s, K, V, S: 's + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'s, &'s Storage<K, V, S>> for &'s Internal<K, V> {
+impl<'s, T, S: 's + cc_traits::Slab<Node<T>>> btree::node::ItemAccess<Storage<T, S>> for &'s Internal<T> {
 	/// Returns the current number of items stored in this node.
 	fn item_count(&self) -> usize {
 		(*self).item_count()
 	}
 
 	/// Returns a reference to the item with the given offset in the node.
-	fn borrow_item(&self, offset: Offset) -> Option<&Item<K, V>> {
+	fn borrow_item(&self, offset: Offset) -> Option<&T> {
 		(*self).item(offset)
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a, &'a Storage<K, V, S>> for &'a Internal<K, V> {
+impl<'a, T, S: 'a + cc_traits::Slab<Node<T>>> btree::node::InternalRef<Storage<T, S>> for &'a Internal<T> {
 	/// Returns the identifer of the parent node, if any.
 	fn parent(&self) -> Option<usize> {
 		(*self).parent()
@@ -151,35 +150,35 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a,
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalConst<'a, &'a Storage<K, V, S>> for &'a Internal<K, V> {
-	fn item(&self, offset: Offset) -> Option<&'a Item<K, V>> {
+impl<'a, T, S: 'a + cc_traits::Slab<Node<T>>> btree::node::InternalConst<'a, Storage<T, S>> for &'a Internal<T> {
+	fn item(&self, offset: Offset) -> Option<&'a T> {
 		(*self).item(offset)
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, &'a Storage<K, V, S>> for &'a mut Internal<K, V> {
+impl<'a, T, S: 'a + cc_traits::Slab<Node<T>>> btree::node::ItemAccess<Storage<T, S>> for &'a mut Internal<T> {
 	/// Returns the current number of items stored in this node.
 	fn item_count(&self) -> usize {
 		self.branches.len()
 	}
 
 	/// Returns a reference to the item with the given offset in the node.
-	fn borrow_item(&self, offset: Offset) -> Option<&Item<K, V>> {
+	fn borrow_item(&self, offset: Offset) -> Option<&T> {
 		(*self).item(offset)
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a, &'a Storage<K, V, S>> for &'a mut Internal<K, V> {
+impl<'a, T, S: 'a + cc_traits::Slab<Node<T>>> btree::node::InternalRef<Storage<T, S>> for &'a mut Internal<T> {
 	/// Returns the identifer of the parent node, if any.
 	fn parent(&self) -> Option<usize> {
-		Internal::<K, V>::parent(self)
+		Internal::<T>::parent(self)
 	}
 
 	/// Returns the id of the child with the given index, if any.
 	/// 
 	/// Note that in the case of leaf nodes, this always return `None`.
 	fn child_id(&self, index: usize) -> Option<usize> {
-		Internal::<K, V>::child_id(self, index)
+		Internal::<T>::child_id(self, index)
 	}
 
 	/// Returns the maximum capacity of this node.
@@ -188,11 +187,11 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a,
 	/// 
 	/// The node is considered overflowing if it contains `max_capacity` items.
 	fn max_capacity(&self) -> usize {
-		Internal::<K, V>::max_capacity(self)
+		Internal::<T>::max_capacity(self)
 	}
 }
 
-impl<'r, 's, K, V, S: 's + cc_traits::SlabMut<Node<K, V>>> btree::node::InternalMut<'r, 's, &'s mut Storage<K, V, S>> for &'r mut Internal<K, V> {
+impl<'r, T, S: 'r + cc_traits::SlabMut<Node<T>>> btree::node::InternalMut<'r, Storage<T, S>> for &'r mut Internal<T> {
 	fn set_parent(&mut self, parent: Option<usize>) {
 		(*self).set_parent(parent)
 	}
@@ -202,28 +201,28 @@ impl<'r, 's, K, V, S: 's + cc_traits::SlabMut<Node<K, V>>> btree::node::Internal
 	}
 
 	/// Returns a mutable reference to the item with the given offset in the node.
-	fn into_item_mut(self, offset: Offset) -> Option<&'r mut Item<K, V>> {
+	fn into_item_mut(self, offset: Offset) -> Option<&'r mut T> {
 		self.branches.get_mut(offset.unwrap()).map(|branch| &mut branch.item)
 	}
 
-	fn insert(&mut self, offset: Offset, item: Item<K, V>, right_child_id: usize) {
+	fn insert(&mut self, offset: Offset, item: T, right_child_id: usize) {
 		self.branches.insert(offset.unwrap(), Branch {
 			item,
 			child_id: right_child_id
 		})
 	}
 
-	fn remove(&mut self, offset: Offset) -> (Item<K, V>, usize) {
+	fn remove(&mut self, offset: Offset) -> (T, usize) {
 		let b = self.branches.remove(offset.unwrap());
 		(b.item, b.child_id)
 	}
 
-	fn replace(&mut self, offset: Offset, mut item: Item<K, V>) -> Item<K, V> {
+	fn replace(&mut self, offset: Offset, mut item: T) -> T {
 		std::mem::swap(&mut self.branches.get_mut(offset.unwrap()).unwrap().item, &mut item);
 		item
 	}
 
-	fn append(&mut self, separator: Item<K, V>, mut other: Internal<K, V>) -> Offset {
+	fn append(&mut self, separator: T, mut other: Internal<T>) -> Offset {
 		let offset = self.branches.len().into();
 		self.branches.push(Branch {
 			item: separator,
