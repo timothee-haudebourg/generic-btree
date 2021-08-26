@@ -78,7 +78,7 @@ impl<K, V> Internal<K, V> {
 	}
 }
 
-impl<K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Internal<Storage<K, V, S>> for Internal<K, V> {
+impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Internal<'s, &'s mut Storage<K, V, S>> for Internal<K, V> {
 	fn parent(&self) -> Option<usize> {
 		self.parent()
 	}
@@ -116,7 +116,7 @@ impl<K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Internal<Stor
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, Storage<K, V, S>> for &'a Internal<K, V> {
+impl<'s, K, V, S: 's + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'s, &'s Storage<K, V, S>> for &'s Internal<K, V> {
 	/// Returns the current number of items stored in this node.
 	fn item_count(&self) -> usize {
 		(*self).item_count()
@@ -128,7 +128,7 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, 
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a, Storage<K, V, S>> for &'a Internal<K, V> {
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a, &'a Storage<K, V, S>> for &'a Internal<K, V> {
 	/// Returns the identifer of the parent node, if any.
 	fn parent(&self) -> Option<usize> {
 		(*self).parent()
@@ -151,13 +151,13 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a,
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalConst<'a, Storage<K, V, S>> for &'a Internal<K, V> {
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalConst<'a, &'a Storage<K, V, S>> for &'a Internal<K, V> {
 	fn item(&self, offset: Offset) -> Option<&'a Item<K, V>> {
 		(*self).item(offset)
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, Storage<K, V, S>> for &'a mut Internal<K, V> {
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, &'a Storage<K, V, S>> for &'a mut Internal<K, V> {
 	/// Returns the current number of items stored in this node.
 	fn item_count(&self) -> usize {
 		self.branches.len()
@@ -169,7 +169,7 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, 
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a, Storage<K, V, S>> for &'a mut Internal<K, V> {
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a, &'a Storage<K, V, S>> for &'a mut Internal<K, V> {
 	/// Returns the identifer of the parent node, if any.
 	fn parent(&self) -> Option<usize> {
 		Internal::<K, V>::parent(self)
@@ -192,7 +192,7 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::InternalRef<'a,
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::SlabMut<Node<K, V>>> btree::node::InternalMut<'a, Storage<K, V, S>> for &'a mut Internal<K, V> {
+impl<'r, 's, K, V, S: 's + cc_traits::SlabMut<Node<K, V>>> btree::node::InternalMut<'r, 's, &'s mut Storage<K, V, S>> for &'r mut Internal<K, V> {
 	fn set_parent(&mut self, parent: Option<usize>) {
 		(*self).set_parent(parent)
 	}
@@ -202,7 +202,7 @@ impl<'a, K, V, S: 'a + cc_traits::SlabMut<Node<K, V>>> btree::node::InternalMut<
 	}
 
 	/// Returns a mutable reference to the item with the given offset in the node.
-	fn into_item_mut(self, offset: Offset) -> Option<&'a mut Item<K, V>> {
+	fn into_item_mut(self, offset: Offset) -> Option<&'r mut Item<K, V>> {
 		self.branches.get_mut(offset.unwrap()).map(|branch| &mut branch.item)
 	}
 

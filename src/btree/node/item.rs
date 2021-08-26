@@ -34,6 +34,12 @@ impl<K, V> Item<K, V> {
 	}
 
 	#[inline]
+	pub fn replace_value(&mut self, mut value: V) -> V {
+		std::mem::swap(&mut self.value, &mut value);
+		value
+	}
+
+	#[inline]
 	pub fn into_value(self) -> V {
 		self.value
 	}
@@ -69,10 +75,14 @@ pub trait Mut<S: StorageMut> {
 }
 
 pub trait Replace<S: StorageMut, T> {
-	fn replace(&mut self, item: T) -> S::Item;
+	type Output;
+
+	fn replace(&mut self, item: T) -> Self::Output;
 }
 
 impl<S: StorageMut, T> Replace<S, S::Item> for T where T: Mut<S> {
+	type Output = S::Item;
+
 	fn replace(&mut self, mut item: S::Item) -> S::Item {
 		self.swap(&mut item);
 		item

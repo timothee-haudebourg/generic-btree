@@ -26,7 +26,7 @@ impl<K, V> Default for Leaf<K, V> {
 	}
 }
 
-impl<K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Leaf<Storage<K, V, S>> for Leaf<K, V> {
+impl<'s, K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Leaf<'s, &'s mut Storage<K, V, S>> for Leaf<K, V> {
 	fn parent(&self) -> Option<usize> {
 		if self.parent == usize::MAX {
 			None
@@ -60,7 +60,7 @@ impl<K, V, S: cc_traits::SlabMut<Node<K, V>>> btree::node::buffer::Leaf<Storage<
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, Storage<K, V, S>> for &'a Leaf<K, V> {
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, &'a Storage<K, V, S>> for &'a Leaf<K, V> {
 	/// Returns the current number of items stored in this node.
 	fn item_count(&self) -> usize {
 		self.items.len()
@@ -72,7 +72,7 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, 
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, Storage<K, V, S>> for &'a Leaf<K, V> {
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, &'a Storage<K, V, S>> for &'a Leaf<K, V> {
 	fn parent(&self) -> Option<usize> {
 		if self.parent == usize::MAX {
 			None
@@ -86,13 +86,13 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, Sto
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafConst<'a, Storage<K, V, S>> for &'a Leaf<K, V> {
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafConst<'a, &'a Storage<K, V, S>> for &'a Leaf<K, V> {
 	fn item(&self, offset: Offset) -> Option<&'a Item<K, V>> {
 		self.items.get(offset.unwrap())
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, Storage<K, V, S>> for &'a mut Leaf<K, V> {
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, &'a Storage<K, V, S>> for &'a mut Leaf<K, V> {
 	/// Returns the current number of items stored in this node.
 	fn item_count(&self) -> usize {
 		self.items.len()
@@ -104,7 +104,7 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::ItemAccess<'a, 
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, Storage<K, V, S>> for &'a mut Leaf<K, V> {
+impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, &'a Storage<K, V, S>> for &'a mut Leaf<K, V> {
 	fn parent(&self) -> Option<usize> {
 		if self.parent == usize::MAX {
 			None
@@ -118,7 +118,7 @@ impl<'a, K, V, S: 'a + cc_traits::Slab<Node<K, V>>> btree::node::LeafRef<'a, Sto
 	}
 }
 
-impl<'a, K, V, S: 'a + cc_traits::SlabMut<Node<K, V>>> btree::node::LeafMut<'a, Storage<K, V, S>> for &'a mut Leaf<K, V> {
+impl<'r, 's, K, V, S: 's + cc_traits::SlabMut<Node<K, V>>> btree::node::LeafMut<'r, 's, &'s mut Storage<K, V, S>> for &'r mut Leaf<K, V> {
 	fn set_parent(&mut self, parent: Option<usize>) {
 		self.parent = parent.unwrap_or(usize::MAX)
 	}
@@ -127,7 +127,7 @@ impl<'a, K, V, S: 'a + cc_traits::SlabMut<Node<K, V>>> btree::node::LeafMut<'a, 
 		self.items.get_mut(offset.unwrap())
 	}
 
-	fn into_item_mut(self, offset: Offset) -> Option<&'a mut Item<K, V>> {
+	fn into_item_mut(self, offset: Offset) -> Option<&'r mut Item<K, V>> {
 		self.items.get_mut(offset.unwrap())
 	}
 

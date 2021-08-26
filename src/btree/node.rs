@@ -3,11 +3,14 @@ use std::{
 	ops::{
 		Deref
 	},
-	borrow::Borrow
+	borrow::Borrow,
+	cmp::Ordering
 };
 use super::{
 	Storage,
 	StorageMut,
+	ItemOrd,
+	ItemPartialOrd,
 	ValidationError
 };
 
@@ -153,7 +156,7 @@ impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> Reference<S, L, I> {
 	/// this funtion returns the index and id of the child that may match the key,
 	/// or `Err(None)` if it is a leaf.
 	#[inline]
-	pub fn offset_of<'r, Q: ?Sized>(&'r self, key: &Q) -> Result<Offset, (usize, Option<usize>)> where S::ItemRef<'r>: PartialOrd<Q> {
+	pub fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, (usize, Option<usize>)> where S: ItemPartialOrd<Q> {
 		match &self.desc {
 			Desc::Internal(node) => match node.offset_of(key) {
 				Ok(i) => Ok(i),
@@ -257,7 +260,7 @@ impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> Reference<S, L, I> {
 	}
 
 	#[cfg(debug_assertions)]
-	pub fn validate<'a>(&self, id: usize, parent: Option<usize>, min: Option<S::ItemRef<'a>>, max: Option<S::ItemRef<'a>>) -> Result<(Option<S::ItemRef<'a>>, Option<S::ItemRef<'a>>), ValidationError> where for<'r, 's> S::ItemRef<'r>: PartialOrd<S::ItemRef<'s>> {
+	pub fn validate<'a>(&self, id: usize, parent: Option<usize>, min: Option<S::ItemRef<'a>>, max: Option<S::ItemRef<'a>>) -> Result<(Option<S::ItemRef<'a>>, Option<S::ItemRef<'a>>), ValidationError> where S: ItemOrd {
 		if self.parent() != parent {
 			return Err(ValidationError::WrongParent(id, self.parent(), parent))
 		}
@@ -272,14 +275,14 @@ impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> Reference<S, L, I> {
 
 		for i in 1..self.item_count() {
 			let prev = i-1;
-			if self.borrow_item(i.into()).unwrap() < self.borrow_item(prev.into()).unwrap() {
+			if S::item_cmp(&self.borrow_item(i.into()).unwrap(), &self.borrow_item(prev.into()).unwrap()).is_lt() {
 				return Err(ValidationError::UnsortedNode(id))
 			}
 		}
 
 		if let Some(min) = &min {
 			if let Some(item) = self.borrow_first_item() {
-				if min >= &item {
+				if S::item_cmp(min, &item).is_ge() {
 					return Err(ValidationError::UnsortedFromLeft(id))
 				}
 			}
@@ -287,7 +290,7 @@ impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> Reference<S, L, I> {
 
 		if let Some(max) = &max {
 			if let Some(item) = self.borrow_last_item() {
-				if max <= &item {
+				if S::item_cmp(max, &item).is_le() {
 					return Err(ValidationError::UnsortedFromRight(id))
 				}
 			}
@@ -343,7 +346,7 @@ impl<'a, S: 'a + Storage, L: LeafConst<'a, S>, I: InternalConst<'a, S>> Referenc
 	}
 
 	#[inline]
-	pub fn get<'r, Q: ?Sized>(&'r self, key: &Q) -> Result<Option<S::ItemRef<'a>>, usize> where S::ItemRef<'r>: PartialOrd<Q> {
+	pub fn get<Q: ?Sized>(&self, key: &Q) -> Result<Option<S::ItemRef<'a>>, usize> where S: ItemPartialOrd<Q> {
 		match &self.desc {
 			Desc::Leaf(leaf) => Ok(leaf.get(key)),
 			Desc::Internal(node) => match node.get(key) {
@@ -397,7 +400,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	}
 
 	#[inline]
-	pub fn into_get_mut<Q: ?Sized>(self, key: &Q) -> Result<Option<S::ItemMut<'a>>, usize> where for<'r> S::ItemRef<'r>: PartialOrd<Q>, Self: 'a {
+	pub fn into_get_mut<Q: ?Sized>(self, key: &Q) -> Result<Option<S::ItemMut<'a>>, usize> where S: ItemPartialOrd<Q>, Self: 'a {
 		match self.desc {
 			Desc::Leaf(leaf) => Ok(leaf.get_mut(key)),
 			Desc::Internal(node) => match node.get_mut(key) {
@@ -557,7 +560,7 @@ pub enum Items<'b, S, L, I> {
 	Internal(internal::Items<'b, S, I>)
 }
 
-impl<'b, S: Storage, L: LeafRef<S>, I: InternalRef<S>> Iterator for Items<'b, S, L, I> {
+impl<'b, S: 'b + Storage, L: LeafRef<S>, I: InternalRef<S>> Iterator for Items<'b, S, L, I> {
 	type Item = (Option<usize>, S::ItemRef<'b>, Option<usize>);
 
 	#[inline]

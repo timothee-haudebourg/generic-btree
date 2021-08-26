@@ -12,7 +12,7 @@ pub trait Internal<S: StorageMut>: Default {
 
 	fn item_count(&self) -> usize;
 
-	fn item(&self, offset: Offset) -> Option<S::ItemRef<'_>>;
+	fn item<'r>(&'r self, offset: Offset) -> Option<S::ItemRef<'r>> where S: 'r;
 
 	fn child_count(&self) -> usize {
 		self.item_count() + 1usize

@@ -77,16 +77,24 @@ pub enum ValidationError {
 	UnsortedFromRight(usize),
 }
 
+pub trait ItemPartialOrd<T: ?Sized>: Storage {
+	fn item_partial_cmp<'r>(item: &Self::ItemRef<'r>, other: &T) -> Option<Ordering> where Self: 'r;
+}
+
+pub trait ItemOrd: Storage {
+	fn item_cmp<'r, 's>(item: &Self::ItemRef<'r>, other: &Self::ItemRef<'s>) -> Ordering where Self: 'r + 's;
+}
+
 /// Data storage.
 pub trait Storage: Sized {
 	/// Item reference.
-	type ItemRef<'r>;
+	type ItemRef<'r>: 'r where Self: 'r;
 
 	/// Leaf node reference.
-	type LeafRef<'r>: node::LeafConst<'r, Self> where Self: 'r;
+	type LeafRef<'r>: 'r + node::LeafConst<'r, Self> where Self: 'r;
 
 	/// Internal node reference.
-	type InternalRef<'r>: node::InternalConst<'r, Self> where Self: 'r;
+	type InternalRef<'r>: 'r + node::InternalConst<'r, Self> where Self: 'r;
 
 	/// Get the root node id.
 	///
@@ -110,7 +118,7 @@ pub trait Storage: Sized {
 	/// The supplied key may be any borrowed form of the map's key type, but the ordering
 	/// on the borrowed form *must* match the ordering on the key type.
 	#[inline]
-	fn get<Q: ?Sized>(&self, key: &Q) -> Option<Self::ItemRef<'_>> where for<'r> Self::ItemRef<'r>: PartialOrd<Q> {
+	fn get<Q: ?Sized>(&self, key: &Q) -> Option<Self::ItemRef<'_>> where Self: ItemPartialOrd<Q> {
 		match self.root() {
 			Some(id) => self.get_in(key, id),
 			None => None
@@ -119,7 +127,7 @@ pub trait Storage: Sized {
 
 	/// Get a reference to the value associated to the given `key` in the node `id`, if any.
 	#[inline]
-	fn get_in<Q: ?Sized>(&self, key: &Q, mut id: usize) -> Option<Self::ItemRef<'_>> where for<'r> Self::ItemRef<'r>: PartialOrd<Q> {
+	fn get_in<Q: ?Sized>(&self, key: &Q, mut id: usize) -> Option<Self::ItemRef<'_>> where Self: ItemPartialOrd<Q> {
 		loop {
 			let node = self.node(id).unwrap();
 			match node.get(key) {
@@ -140,9 +148,8 @@ pub trait Storage: Sized {
 	/// The supplied key may be any borrowed form of the map's key type, but the ordering
 	/// on the borrowed form *must* match the ordering on the key type.
 	#[inline]
-	fn get_item<Q: ?Sized>(&self, k: &Q) -> Option<Self::ItemRef<'_>>
-	where
-		for<'r> Self::ItemRef<'r>: PartialOrd<Q>
+	fn get_item<'a, Q: ?Sized>(&'a self, k: &Q) -> Option<Self::ItemRef<'a>>
+	where Self: ItemPartialOrd<Q>
 	{
 		match self.address_of(k) {
 			Ok(addr) => self.item(addr),
@@ -497,14 +504,14 @@ pub trait Storage: Sized {
 	/// Returns `Ok(addr)` if the key is used in the tree.
 	/// If the key is not used in the tree then `Err(addr)` is returned,
 	/// where `addr` can be used to insert the missing key.
-	fn address_of<Q: ?Sized>(&self, key: &Q) -> Result<Address, Address> where for<'r> Self::ItemRef<'r>: PartialOrd<Q> {
+	fn address_of<Q: ?Sized>(&self, key: &Q) -> Result<Address, Address> where Self: ItemPartialOrd<Q> {
 		match self.root() {
 			Some(id) => self.address_in(id, key),
 			None => Err(Address::nowhere())
 		}
 	}
 
-	fn address_in<Q: ?Sized>(&self, mut id: usize, key: &Q) -> Result<Address, Address> where for<'r> Self::ItemRef<'r>: PartialOrd<Q> {
+	fn address_in<Q: ?Sized>(&self, mut id: usize, key: &Q) -> Result<Address, Address> where Self: ItemPartialOrd<Q> {
 		loop {
 			match self.node(id).unwrap().offset_of(key) {
 				Ok(offset) => {
@@ -542,7 +549,7 @@ pub trait Storage: Sized {
 	where
 		T: Ord,
 		R: RangeBounds<T>,
-		for<'r> Self::ItemRef<'r>: PartialOrd<T>,
+		Self: ItemPartialOrd<T>,
 	{
 		Range::new(self, range)
 	}
@@ -560,7 +567,7 @@ pub trait Storage: Sized {
 	// }
 
 	#[inline]
-	fn eq<'r, 'o, S: Storage>(&'r self, other: &'o S) -> bool where S::ItemRef<'o>: PartialEq<Self::ItemRef<'r>> {
+	fn eq<'r, S: Storage>(&'r self, other: &S) -> bool where S: ItemPartialOrd<Self::ItemRef<'r>> {
 		if self.len() == other.len() {
 			let mut it1 = self.iter();
 			let mut it2 = other.iter();
@@ -569,7 +576,7 @@ pub trait Storage: Sized {
 				match (it1.next(), it2.next()) {
 					(None, None) => break,
 					(Some(item1), Some(item2)) => {
-						if item2 != item1 {
+						if S::item_partial_cmp(&item2, &item1).map(Ordering::is_ne).unwrap_or(true) {
 							return false
 						}
 					},
@@ -584,7 +591,7 @@ pub trait Storage: Sized {
 	}
 
 	#[inline]
-	fn partial_cmp<'r, 'o, S: Storage>(&'r self, other: &'o S) -> Option<Ordering> where S::ItemRef<'o>: PartialOrd<Self::ItemRef<'r>> {
+	fn partial_cmp<'r, S: Storage>(&'r self, other: &S) -> Option<Ordering> where S: ItemPartialOrd<Self::ItemRef<'r>> {
 		let mut it1 = self.iter();
 		let mut it2 = other.iter();
 
@@ -593,10 +600,10 @@ pub trait Storage: Sized {
 				(None, None) => return Some(Ordering::Equal),
 				(_, None) => return Some(Ordering::Greater),
 				(None, _) => return Some(Ordering::Less),
-				(Some(item1), Some(item2)) => match item2.partial_cmp(&item1) {
+				(Some(item1), Some(item2)) => match S::item_partial_cmp(&item2, &item1) {
 					Some(Ordering::Greater) => return Some(Ordering::Less),
 					Some(Ordering::Less) => return Some(Ordering::Greater),
-					Some(Ordering::Equal) => match item2.partial_cmp(&item1) {
+					Some(Ordering::Equal) => match S::item_partial_cmp(&item2, &item1) {
 						Some(Ordering::Greater) => return Some(Ordering::Less),
 						Some(Ordering::Less) => return Some(Ordering::Greater),
 						Some(Ordering::Equal) => (),
@@ -609,7 +616,7 @@ pub trait Storage: Sized {
 	}
 
 	#[inline]
-	fn cmp<'r>(&'r self, other: &'r Self) -> Ordering where Self::ItemRef<'r>: Ord {
+	fn cmp(&self, other: &Self) -> Ordering where Self: ItemOrd {
 		let mut it1 = self.iter();
 		let mut it2 = other.iter();
 
@@ -618,10 +625,10 @@ pub trait Storage: Sized {
 				(None, None) => return Ordering::Equal,
 				(_, None) => return Ordering::Greater,
 				(None, _) => return Ordering::Less,
-				(Some(item1), Some(item2)) => match item2.cmp(&item1) {
+				(Some(item1), Some(item2)) => match Self::item_cmp(&item2, &item1) {
 					Ordering::Greater => return Ordering::Less,
 					Ordering::Less => return Ordering::Greater,
-					Ordering::Equal => match item2.cmp(&item1) {
+					Ordering::Equal => match Self::item_cmp(&item2, &item1) {
 						Ordering::Greater => return Ordering::Less,
 						Ordering::Less => return Ordering::Greater,
 						Ordering::Equal => ()
@@ -680,7 +687,7 @@ pub trait Storage: Sized {
 	}
 
 	#[cfg(debug_assertions)]
-	fn validate(&self) -> Result<(), ValidationError> where for<'r, 's> Self::ItemRef<'r>: PartialOrd<Self::ItemRef<'s>> {
+	fn validate(&self) -> Result<(), ValidationError> where Self: ItemOrd {
 		match self.root() {
 			Some(id) => {
 				self.validate_node(id, None, None, None)?;
@@ -693,7 +700,7 @@ pub trait Storage: Sized {
 
 	/// Validate the given node and returns the depth of the node.
 	#[cfg(debug_assertions)]
-	fn validate_node<'a>(&'a self, id: usize, parent: Option<usize>, min: Option<Self::ItemRef<'a>>, max: Option<Self::ItemRef<'a>>) -> Result<usize, ValidationError> where for<'r, 's> Self::ItemRef<'r>: PartialOrd<Self::ItemRef<'s>> {
+	fn validate_node<'a>(&'a self, id: usize, parent: Option<usize>, min: Option<Self::ItemRef<'a>>, max: Option<Self::ItemRef<'a>>) -> Result<usize, ValidationError> where Self: ItemOrd {
 		let node = self.node(id).ok_or(ValidationError::MissingNode(id))?;
 		let (mut min, mut max) = node.validate(id, parent, min, max)?;
 
@@ -738,9 +745,9 @@ pub unsafe trait StorageMut: Storage {
 	type LeafNode: node::buffer::Leaf<Self>;
 	type InternalNode: node::buffer::Internal<Self>;
 
-	type ItemMut<'r>: node::item::Mut<Self> where Self: 'r;
-	type LeafMut<'r>: node::LeafMut<'r, Self> where Self: 'r;
-	type InternalMut<'r>: node::InternalMut<'r, Self> where Self: 'r;
+	type ItemMut<'r>: 'r + node::item::Mut<Self> where Self: 'r;
+	type LeafMut<'r>: 'r + node::LeafMut<'r, Self> where Self: 'r;
+	type InternalMut<'r>: 'r + node::InternalMut<'r, Self> where Self: 'r;
 
 	/// Sets the roo node by id.
 	fn set_root(&mut self, root: Option<usize>);
@@ -792,7 +799,7 @@ pub unsafe trait StorageMut: Storage {
 	/// The key may be any borrowed form of the map's key type, but the ordering
 	/// on the borrowed form *must* match the ordering on the key type.
 	#[inline]
-	fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<Self::ItemMut<'_>> where for<'r> Self::ItemRef<'r>: PartialOrd<Q> {
+	fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<Self::ItemMut<'_>> where Self: ItemPartialOrd<Q> {
 		let addr = self.address_of(key);
 		match addr {
 			Ok(addr) => Some(self.item_mut(addr).unwrap()),
@@ -912,7 +919,7 @@ pub unsafe trait StorageMut: Storage {
 	where
 		T: Ord,
 		R: RangeBounds<T>,
-		for<'r> Self::ItemRef<'r>: PartialOrd<T>,
+		Self: ItemPartialOrd<T>,
 	{
 		RangeMut::new(self, range)
 	}
@@ -943,10 +950,9 @@ pub unsafe trait StorageMut: Storage {
 
 	/// Insert a key-value pair in the tree.
 	#[inline]
-	fn insert<'a, T>(&'a mut self, item: T) -> Option<Self::Item>
+	fn insert<'a, T>(&'a mut self, item: T) -> Option<<Self::ItemMut<'a> as Replace<Self, T>>::Output>
 	where
-		Self: Insert<T>,
-		for<'r> Self::ItemRef<'r>: PartialOrd<T>,
+		Self: Insert<T> + ItemPartialOrd<T>,
 		Self::ItemMut<'a>: Replace<Self, T>
 	{
 		match self.address_of(&item) {
@@ -1002,7 +1008,7 @@ pub unsafe trait StorageMut: Storage {
 	// 	}
 	// }
 
-	fn replace_at<'a, T>(&'a mut self, addr: Address, item: T) -> Self::Item where Self::ItemMut<'a>: Replace<Self, T> {
+	fn replace_at<'a, T>(&'a mut self, addr: Address, item: T) -> <Self::ItemMut<'a> as Replace<Self, T>>::Output where Self::ItemMut<'a>: Replace<Self, T> {
 		self.node_mut(addr.id).unwrap().into_item_mut(addr.offset).unwrap().replace(item)
 	}
 
@@ -1069,7 +1075,7 @@ pub unsafe trait StorageMut: Storage {
 	/// assert_eq!(map.remove(&1), None);
 	/// ```
 	#[inline]
-	fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<Self::Item> where for<'r> Self::ItemRef<'r>: PartialOrd<Q> {
+	fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<Self::Item> where Self: ItemPartialOrd<Q> {
 		match self.address_of(key) {
 			Ok(addr) => {
 				let (item, _) = self.remove_at(addr).unwrap();
@@ -1130,7 +1136,7 @@ pub unsafe trait StorageMut: Storage {
 	/// assert_eq!(map.remove_entry(&1), None);
 	/// ```
 	#[inline]
-	fn remove_entry<Q: ?Sized>(&mut self, key: &Q) -> Option<Self::Item> where for<'r> Self::ItemRef<'r>: PartialOrd<Q> {
+	fn remove_entry<Q: ?Sized>(&mut self, key: &Q) -> Option<Self::Item> where Self: ItemPartialOrd<Q> {
 		match self.address_of(key) {
 			Ok(addr) => {
 				let (item, _) = self.remove_at(addr).unwrap();
@@ -1142,7 +1148,7 @@ pub unsafe trait StorageMut: Storage {
 
 	/// Removes and returns the binding in the map, if any, of which key matches the given one.
 	#[inline]
-	fn take<Q: ?Sized>(&mut self, key: &Q) -> Option<Self::Item> where for<'r> Self::ItemRef<'r>: PartialOrd<Q> {
+	fn take<Q: ?Sized>(&mut self, key: &Q) -> Option<Self::Item> where Self: ItemPartialOrd<Q> {
 		match self.address_of(key) {
 			Ok(addr) => {
 				let (item, _) = self.remove_at(addr).unwrap();
@@ -1589,8 +1595,8 @@ pub unsafe trait StorageMut: Storage {
 	#[inline]
 	fn append(&mut self, other: &mut Self)
 	where
-		for<'r> Self::ItemRef<'r>: PartialOrd<<Self as StorageMut>::Item> + ItemRead<Self>,
-		Self: Default + Insert<<Self as StorageMut>::Item>
+		for<'r> Self::ItemRef<'r>: ItemRead<Self>,
+		Self: Default + Insert<<Self as StorageMut>::Item> + ItemPartialOrd<Self::Item>
 	{
 		// Do we have to append anything at all?
 		if other.is_empty() {

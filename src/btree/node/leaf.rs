@@ -5,6 +5,7 @@ use std::{
 };
 use crate::util::binary_search_min;
 use super::{
+	ItemPartialOrd,
 	Storage,
 	StorageMut,
 	Offset,
@@ -19,7 +20,7 @@ pub trait LeafRef<S: Storage>: ItemAccess<S> {
 
 	/// Find the offset of the item matching the given key.
 	#[inline]
-	fn offset_of<'r, Q: ?Sized>(&'r self, key: &Q) -> Result<Offset, Offset> where S::ItemRef<'r>: PartialOrd<Q> {
+	fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, Offset> where S: ItemPartialOrd<Q> {
 		match binary_search_min(self, key) {
 			Some((i, eq)) => {
 				let item = self.borrow_item(i).unwrap();
@@ -77,7 +78,7 @@ pub trait LeafConst<'a, S: 'a + Storage>: LeafRef<S> {
 	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
 
 	#[inline]
-	fn get<'r, Q: ?Sized>(&'r self, key: &Q) -> Option<S::ItemRef<'a>> where S::ItemRef<'r>: PartialOrd<Q> {
+	fn get<Q: ?Sized>(&self, key: &Q) -> Option<S::ItemRef<'a>> where S: ItemPartialOrd<Q> {
 		match binary_search_min(self, key) {
 			Some((i, eq)) => {
 				let item = self.item(i).unwrap();
@@ -117,7 +118,7 @@ pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<S> {
 	fn append(&mut self, separator: S::Item, other: S::LeafNode) -> Offset;
 
 	#[inline]
-	fn get_mut<Q: ?Sized>(self, key: &Q) -> Option<S::ItemMut<'a>> where for<'r> S::ItemRef<'r>: PartialOrd<Q> {
+	fn get_mut<Q: ?Sized>(self, key: &Q) -> Option<S::ItemMut<'a>> where S: ItemPartialOrd<Q> {
 		match binary_search_min(&self, key) {
 			Some((i, eq)) => {
 				let item = self.into_item_mut(i).unwrap();
@@ -172,7 +173,7 @@ pub struct Items<'b, S, R: ?Sized> {
 	storage: PhantomData<S>
 }
 
-impl<'b, S: Storage, R: LeafRef<S>> Iterator for Items<'b, S, R> {
+impl<'b, S: 'b + Storage, R: LeafRef<S>> Iterator for Items<'b, S, R> {
 	type Item = S::ItemRef<'b>;
 
 	fn next(&mut self) -> Option<Self::Item> {
