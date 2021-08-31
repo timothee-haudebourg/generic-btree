@@ -1,11 +1,4 @@
-use std::{
-	marker::PhantomData,
-	ops::{
-		Deref
-	},
-	borrow::Borrow,
-	cmp::Ordering
-};
+use std::marker::PhantomData;
 use super::{
 	Storage,
 	StorageMut,
@@ -35,10 +28,7 @@ pub use internal::{
 	InternalConst,
 	InternalMut
 };
-pub use item::{
-	Item,
-	ItemAccess
-};
+pub use item::ItemAccess;
 pub use buffer::Buffer;
 
 /// Node type.
@@ -313,7 +303,7 @@ impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> crate::dot::Display for Refer
 			},
 			Desc::Internal(node) => {
 				write!(f, "<c0> |")?;
-				for (i, (_, item, _right)) in node.items().enumerate() {
+				for (_i, (_, item, _right)) in node.items().enumerate() {
 					write!(f, "{{{}}}|", item.dot())?
 					// write!(f, "{{{}|<c{}> {}}} |", item.key().deref(), i, item.value().deref())?;
 				}

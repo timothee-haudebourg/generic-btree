@@ -3,7 +3,7 @@
 
 mod util;
 pub mod btree;
-// pub mod map;
+pub mod map;
 
 #[cfg(feature="dot")]
 pub mod dot;
@@ -15,4 +15,5 @@ pub use btree::{
 	Storage,
 	StorageMut
 };
-// pub use map::Map;
+
+pub use map::Map;

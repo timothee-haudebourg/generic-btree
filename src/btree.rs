@@ -1,15 +1,10 @@
 use std::{
-	ops::{
-		Deref,
-		DerefMut,
-		RangeBounds
-	},
+	ops::RangeBounds,
 	cmp::Ordering,
 	hash::{
 		Hash,
 		Hasher
-	},
-	borrow::Borrow
+	}
 };
 
 pub mod node;
@@ -20,9 +15,13 @@ use node::{
 	Balance,
 	Address,
 	Offset,
-	Item,
 	WouldUnderflow,
-	item::{Replace, Mut as ItemMut}
+	item::{
+		Replace,
+		Mut as ItemMut,
+		Read,
+		Write
+	}
 };
 pub use iter::{
 	Iter,
@@ -44,6 +43,11 @@ pub(crate) use iter::DrainFilterInner;
 // 	OccupiedEntry,
 // 	EntriesMut
 // };
+
+pub enum UpdateEntry<Q, I> {
+	Vacant(Q),
+	Occupied(I)
+}
 
 /// B-Tree validation error.
 #[derive(Debug)]
@@ -81,7 +85,7 @@ pub trait ItemPartialOrd<T: ?Sized>: Storage {
 	fn item_partial_cmp<'r>(item: &Self::ItemRef<'r>, other: &T) -> Option<Ordering> where Self: 'r;
 }
 
-pub trait ItemOrd: Storage {
+pub trait ItemOrd: Storage + for<'r> ItemPartialOrd<<Self as Storage>::ItemRef<'r>> {
 	fn item_cmp<'r, 's>(item: &Self::ItemRef<'r>, other: &Self::ItemRef<'s>) -> Ordering where Self: 'r + 's;
 }
 
@@ -813,96 +817,6 @@ pub unsafe trait StorageMut: Storage {
 		IterMut::new(self)
 	}
 
-	// /// Gets the given key's corresponding entry in the map for in-place manipulation.
-	// #[inline]
-	// fn entry(&mut self, key: Self::Key) -> Entry<Self> where Self::Key: Ord {
-	// 	match self.address_of(&key) {
-	// 		Ok(addr) => {
-	// 			Entry::Occupied(OccupiedEntry {
-	// 				map: self,
-	// 				addr
-	// 			})
-	// 		},
-	// 		Err(addr) => {
-	// 			Entry::Vacant(VacantEntry {
-	// 				map: self,
-	// 				key,
-	// 				addr
-	// 			})
-	// 		}
-	// 	}
-	// }
-
-	// /// Returns the first entry in the map for in-place manipulation.
-	// /// The key of this entry is the minimum key in the map.
-	// ///
-	// /// # Example
-	// ///
-	// /// ```
-	// /// use generic_btree::slab::Map;
-	// ///
-	// /// let mut map = Map::new();
-	// /// map.insert(1, "a");
-	// /// map.insert(2, "b");
-	// /// if let Some(mut entry) = map.first_entry() {
-	// ///     if *entry.key() > 0 {
-	// ///         entry.insert("first");
-	// ///     }
-	// /// }
-	// /// assert_eq!(*map.get(&1).unwrap(), "first");
-	// /// assert_eq!(*map.get(&2).unwrap(), "b");
-	// /// ```
-	// #[inline]
-	// fn first_entry(&mut self) -> Option<OccupiedEntry<Self>> {
-	// 	match self.first_item_address() {
-	// 		Some(addr) => {
-	// 			Some(OccupiedEntry {
-	// 				map: self,
-	// 				addr
-	// 			})
-	// 		},
-	// 		None => None
-	// 	}
-	// }
-
-	// /// Returns the last entry in the map for in-place manipulation.
-	// /// The key of this entry is the maximum key in the map.
-	// ///
-	// /// # Example
-	// ///
-	// /// ```
-	// /// use generic_btree::slab::Map;
-	// ///
-	// /// let mut map = Map::new();
-	// /// map.insert(1, "a");
-	// /// map.insert(2, "b");
-	// /// if let Some(mut entry) = map.last_entry() {
-	// ///     if *entry.key() > 0 {
-	// ///         entry.insert("last");
-	// ///     }
-	// /// }
-	// /// assert_eq!(*map.get(&1).unwrap(), "a");
-	// /// assert_eq!(*map.get(&2).unwrap(), "last");
-	// /// ```
-	// #[inline]
-	// fn last_entry(&mut self) -> Option<OccupiedEntry<Self>> {
-	// 	match self.last_item_address() {
-	// 		Some(addr) => {
-	// 			Some(OccupiedEntry {
-	// 				map: self,
-	// 				addr
-	// 			})
-	// 		},
-	// 		None => None
-	// 	}
-	// }
-
-	// /// Gets a mutable iterator over the entries of the map, sorted by key, that allows insertion and deletion of the iterated entries.
-	// #[inline]
-	// fn entries_mut(&mut self) -> EntriesMut<Self> {
-	// 	EntriesMut::new(self)
-	// }
-
 	/// Constructs a mutable double-ended iterator over a sub-range of elements in the map.
 	/// The simplest way is to use the range syntax `min..max`, thus `range(min..max)` will
 	/// yield elements from min (inclusive) to max (exclusive).
@@ -967,8 +881,9 @@ pub unsafe trait StorageMut: Storage {
 		}
 	}
 
-	fn insert_at(&mut self, addr: Address, item: Self::Item) -> Address {
-		self.insert_exactly_at(self.leaf_address(addr), item, None)
+	fn insert_at<T>(&mut self, addr: Address, item: T) -> Address where Self: Insert<T> {
+		let allocated_item = self.allocate_item(item);
+		self.insert_exactly_at(self.leaf_address(addr), allocated_item, None)
 	}
 
 	fn insert_exactly_at(&mut self, addr: Address, item: Self::Item, opt_right_id: Option<usize>) -> Address {
@@ -1012,51 +927,57 @@ pub unsafe trait StorageMut: Storage {
 		self.node_mut(addr.id).unwrap().into_item_mut(addr.offset).unwrap().replace(item)
 	}
 
-	// /// Removes and returns the first element in the map.
-	// /// The key of this element is the minimum key that was in the map.
-	// ///
-	// /// # Example
-	// ///
-	// /// Draining elements in ascending order, while keeping a usable map each iteration.
-	// ///
-	// /// ```
-	// /// use generic_btree::slab::Map;
-	// ///
-	// /// let mut map = Map::new();
-	// /// map.insert(1, "a");
-	// /// map.insert(2, "b");
-	// /// while let Some((key, _val)) = map.pop_first() {
-	// ///     assert!(map.iter().all(|(k, _v)| *k > key));
-	// /// }
-	// /// assert!(map.is_empty());
-	// /// ```
-	// #[inline]
-	// fn pop_first(&mut self) -> Option<Item<Self::Key, Self::Value>> {
-	// 	self.first_entry().map(|entry| entry.remove_entry())
-	// }
+	/// Removes and returns the first element in the map.
+	/// The key of this element is the minimum key that was in the map.
+	///
+	/// # Example
+	///
+	/// Draining elements in ascending order, while keeping a usable map each iteration.
+	///
+	/// ```
+	/// use generic_btree::slab::Map;
+	///
+	/// let mut map = Map::new();
+	/// map.insert(1, "a");
+	/// map.insert(2, "b");
+	/// while let Some((key, _val)) = map.pop_first() {
+	///     assert!(map.iter().all(|(k, _v)| *k > key));
+	/// }
+	/// assert!(map.is_empty());
+	/// ```
+	#[inline]
+	fn pop_first(&mut self) -> Option<Self::Item> {
+		match self.first_item_address() {
+			Some(addr) => Some(self.remove_at(addr).unwrap().0),
+			None => None
+		}
+	}
 
-	// /// Removes and returns the last element in the map.
-	// /// The key of this element is the maximum key that was in the map.
-	// ///
-	// /// # Example
-	// ///
-	// /// Draining elements in descending order, while keeping a usable map each iteration.
-	// ///
-	// /// ```
-	// /// use generic_btree::slab::Map;
-	// ///
-	// /// let mut map = Map::new();
-	// /// map.insert(1, "a");
-	// /// map.insert(2, "b");
-	// /// while let Some((key, _val)) = map.pop_last() {
-	// ///     assert!(map.iter().all(|(k, _v)| *k < key));
-	// /// }
-	// /// assert!(map.is_empty());
-	// /// ```
-	// #[inline]
-	// fn pop_last(&mut self) -> Option<Item<Self::Key, Self::Value>> {
-	// 	self.last_entry().map(|entry| entry.remove_entry())
-	// }
+	/// Removes and returns the last element in the map.
+	/// The key of this element is the maximum key that was in the map.
+	///
+	/// # Example
+	///
+	/// Draining elements in descending order, while keeping a usable map each iteration.
+	///
+	/// ```
+	/// use generic_btree::slab::Map;
+	///
+	/// let mut map = Map::new();
+	/// map.insert(1, "a");
+	/// map.insert(2, "b");
+	/// while let Some((key, _val)) = map.pop_last() {
+	///     assert!(map.iter().all(|(k, _v)| *k < key));
+	/// }
+	/// assert!(map.is_empty());
+	/// ```
+	#[inline]
+	fn pop_last(&mut self) -> Option<Self::Item> {
+		match self.last_item_address() {
+			Some(addr) => Some(self.remove_at(addr).unwrap().0),
+			None => None
+		}
+	}
 
 	/// Removes a key from the map, returning the value at the key if the key
 	/// was previously in the map.
@@ -1158,99 +1079,117 @@ pub unsafe trait StorageMut: Storage {
 		}
 	}
 
-	// /// General-purpose update function.
-	// ///
-	// /// This can be used to insert, compare, replace or remove the value associated to the given
-	// /// `key` in the tree.
-	// /// The action to perform is specified by the `action` function.
-	// /// This function is called once with:
-	// ///  - `Some(value)` when `value` is aready associated to `key` or
-	// ///  - `None` when the `key` is not associated to any value.
-	// ///
-	// /// The `action` function must return a pair (`new_value`, `result`) where
-	// /// `new_value` is the new value to be associated to `key`
-	// /// (if it is `None` any previous binding is removed) and
-	// /// `result` is the value returned by the entire `update` function call.
-	// #[inline]
-	// fn update<T, F>(&mut self, key: Self::Key, action: F) -> T where Self::Key: Ord, F: FnOnce(Option<Self::Value>) -> (Option<Self::Value>, T) {
-	// 	match self.root() {
-	// 		Some(id) => self.update_in(id, key, action),
-	// 		None => {
-	// 			let (to_insert, result) = action(None);
+	/// General-purpose update function.
+	///
+	/// This can be used to insert, compare, replace or remove the value associated to the given
+	/// `key` in the tree.
+	/// The action to perform is specified by the `action` function.
+	/// This function is called once with:
+	///  - `Some(value)` when `value` is aready associated to `key` or
+	///  - `None` when the `key` is not associated to any value.
+	///
+	/// The `action` function must return a pair (`new_value`, `result`) where
+	/// `new_value` is the new value to be associated to `key`
+	/// (if it is `None` any previous binding is removed) and
+	/// `result` is the value returned by the entire `update` function call.
+	#[inline]
+	fn update<T, F, Q, I>(&mut self, key: Q, action: F) -> T
+	where
+		Self: ItemPartialOrd<Q> + Insert<I>,
+		F: FnOnce(UpdateEntry<Q, Self::Item>) -> (Option<I>, T),
+		for<'r> Self::ItemMut<'r>: Read<Self> + Write<Self>
+	{
+		match self.root() {
+			Some(id) => self.update_in(id, key, action),
+			None => {
+				let (to_insert, result) = action(UpdateEntry::Vacant(key));
 
-	// 			if let Some(value) = to_insert {
-	// 				let new_root = node::Buffer::leaf(None, Item::new(key, value));
-	// 				let root_id = self.insert_node(new_root);
-	// 				self.set_root(Some(root_id));
-	// 				self.incr_len()
-	// 			}
+				if let Some(t) = to_insert {
+					let item = self.allocate_item(t);
+					let new_root = node::Buffer::leaf(None, item);
+					let root_id = self.insert_node(new_root);
+					self.set_root(Some(root_id));
+					self.incr_len()
+				}
 
-	// 			result
-	// 		}
-	// 	}
-	// }
+				result
+			}
+		}
+	}
 
-	// fn update_in<T, F>(&mut self, mut id: usize, key: Self::Key, action: F) -> T where Self::Key: Ord, F: FnOnce(Option<Self::Value>) -> (Option<Self::Value>, T) {
-	// 	loop {
-	// 		let offset = self.node(id).unwrap().offset_of(&key);
-	// 		match offset {
-	// 			Ok(offset) => unsafe {
-	// 				let result = {
-	// 					let mut item = self.node_mut(id).unwrap().into_item_mut(offset).unwrap();
-	// 					let value = std::ptr::read(item.value().deref());
-	// 					let (opt_new_value, result) = action(Some(value));
-	// 					if let Some(new_value) = opt_new_value {
-	// 						std::ptr::write(item.value_mut().deref_mut(), new_value);
-	// 						return result
-	// 					}
+	fn update_in<T, F, Q, I>(&mut self, mut id: usize, key: Q, action: F) -> T
+	where
+		Self: ItemPartialOrd<Q> + Insert<I>,
+		F: FnOnce(UpdateEntry<Q, Self::Item>) -> (Option<I>, T),
+		for<'r> Self::ItemMut<'r>: Read<Self> + Write<Self>
+	{
+		loop {
+			let offset = self.node(id).unwrap().offset_of(&key);
+			match offset {
+				Ok(offset) => {
+					let result = {
+						let entry = {
+							let item = self.node_mut(id).unwrap().into_item_mut(offset).unwrap();
+							unsafe { item.read() }
+						};
+						let (opt_new_item, result) = action(UpdateEntry::Occupied(entry));
+						if let Some(t) = opt_new_item {
+							let new_item = self.allocate_item(t);
+							let mut item = self.node_mut(id).unwrap().into_item_mut(offset).unwrap();
+							unsafe { item.write(new_item) };
+							return result
+						}
 
-	// 					result
-	// 				};
+						result
+					};
 
-	// 				let (item, _) = self.remove_at(Address::new(id, offset)).unwrap();
-	// 				// item's value has been moved, it must not be dropped again.
-	// 				item.forget_value();
+					let (item, _) = self.remove_at(Address::new(id, offset)).unwrap();
+					// item has been moved, it must not be dropped again.
+					std::mem::forget(item);
 
-	// 				return result
-	// 			},
-	// 			Err((offset, None)) => {
-	// 				let (opt_new_value, result) = action(None);
-	// 				if let Some(new_value) = opt_new_value {
-	// 					let leaf_addr = Address::new(id, offset.into());
-	// 					self.insert_exactly_at(leaf_addr, Item::new(key, new_value), None);
-	// 				}
+					return result
+				},
+				Err((offset, None)) => {
+					let (opt_new_item, result) = action(UpdateEntry::Vacant(key));
+					if let Some(t) = opt_new_item {
+						let new_item = self.allocate_item(t);
+						let leaf_addr = Address::new(id, offset.into());
+						self.insert_exactly_at(leaf_addr, new_item, None);
+					}
 
-	// 				return result
-	// 			},
-	// 			Err((_, Some(child_id))) => {
-	// 				id = child_id;
-	// 			}
-	// 		}
-	// 	}
-	// }
+					return result
+				},
+				Err((_, Some(child_id))) => {
+					id = child_id;
+				}
+			}
+		}
+	}
 
-	// fn update_at<T, F>(&mut self, addr: Address, action: F) -> T where Self::Key: Ord, F: FnOnce(Self::Value) -> (Option<Self::Value>, T) {
-	// 	unsafe {
-	// 		let result = {
-	// 			let mut item = self.node_mut(addr.id).unwrap().into_item_mut(addr.offset).unwrap();
-	// 			let value = std::ptr::read(item.value().deref());
-	// 			let (opt_new_value, result) = action(value);
+	fn update_at<T, F>(&mut self, addr: Address, action: F) -> T
+	where
+		F: FnOnce(Self::Item) -> (Option<Self::Item>, T),
+		for<'r> Self::ItemMut<'r>: Read<Self> + Write<Self>
+	{
+		let result = {
+			let mut item_mut = self.node_mut(addr.id).unwrap().into_item_mut(addr.offset).unwrap();
+			let item = unsafe { item_mut.read() };
+			let (opt_new_item, result) = action(item);
 
-	// 			if let Some(new_value) = opt_new_value {
-	// 				std::ptr::write(item.value_mut().deref_mut(), new_value);
-	// 				return result
-	// 			}
+			if let Some(new_item) = opt_new_item {
+				unsafe { item_mut.write(new_item) };
+				return result
+			}
 
-	// 			result
-	// 		};
+			result
+		};
 
-	// 		let (item, _) = self.remove_at(addr).unwrap();
-	// 		// item's value has been moved, it must not be dropped again.
-	// 		item.forget_value();
+		let (item, _) = self.remove_at(addr).unwrap();
+		// item has been moved, it must not be dropped again.
+		std::mem::forget(item);
 
-	// 		return result
-	// 	}
-	// }
+		return result
+	}
 
 	/// Creates an iterator which uses a closure to determine if an element should be removed.
 	///
@@ -1595,7 +1534,7 @@ pub unsafe trait StorageMut: Storage {
 	#[inline]
 	fn append(&mut self, other: &mut Self)
 	where
-		for<'r> Self::ItemRef<'r>: ItemRead<Self>,
+		for<'r> Self::ItemRef<'r>: Read<Self>,
 		Self: Default + Insert<<Self as StorageMut>::Item> + ItemPartialOrd<Self::Item>
 	{
 		// Do we have to append anything at all?
@@ -1639,19 +1578,4 @@ pub unsafe trait StorageMut: Storage {
 
 pub trait Insert<T>: StorageMut {
 	fn allocate_item(&mut self, item: T) -> Self::Item;
-}
-
-/// Item reference that can be unsafely copied.
-/// 
-/// This trait is used to optimize the consumption of the tree.
-pub trait ItemRead<S: StorageMut> {
-	/// Copy the item.
-	/// 
-	/// # Safety
-	/// 
-	/// This function is unsafe because
-	/// an item may not implement the `Copy` trait.
-	/// The caller must ensure that the underlying item
-	/// will be disposed of without running `drop`.
-	unsafe fn read(&self) -> S::Item;
 }

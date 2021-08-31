@@ -1,8 +1,4 @@
-use std::{
-	borrow::Borrow,
-	ops::Deref,
-	marker::PhantomData
-};
+use std::marker::PhantomData;
 use crate::util::binary_search_min;
 use super::{
 	ItemPartialOrd,
@@ -23,7 +19,6 @@ pub trait LeafRef<S: Storage>: ItemAccess<S> {
 	fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, Offset> where S: ItemPartialOrd<Q> {
 		match binary_search_min(self, key) {
 			Some((i, eq)) => {
-				let item = self.borrow_item(i).unwrap();
 				if eq {
 					Ok(i.into())
 				} else {

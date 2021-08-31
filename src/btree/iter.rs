@@ -6,20 +6,17 @@ use std::{
 	},
 	ops::{
 		RangeBounds,
-		Bound,
-		Deref
-	},
-	borrow::Borrow
+		Bound
+	}
 };
 use super::{
 	ItemPartialOrd,
 	Storage,
 	StorageMut,
 	Address,
-	node::{
-		Item
-	},
-	ItemRead
+	node::item::{
+		Read
+	}
 };
 
 pub struct Iter<'a, S> {
@@ -132,10 +129,10 @@ impl<S: Storage> IntoIter<S> {
 	}
 }
 
-impl<S: StorageMut> FusedIterator for IntoIter<S> where for<'a> S::ItemRef<'a>: ItemRead<S> { }
-impl<S: StorageMut> ExactSizeIterator for IntoIter<S> where for<'a> S::ItemRef<'a>: ItemRead<S> { }
+impl<S: StorageMut> FusedIterator for IntoIter<S> where for<'a> S::ItemRef<'a>: Read<S> { }
+impl<S: StorageMut> ExactSizeIterator for IntoIter<S> where for<'a> S::ItemRef<'a>: Read<S> { }
 
-impl<S: StorageMut> Iterator for IntoIter<S> where for<'a> S::ItemRef<'a>: ItemRead<S> {
+impl<S: StorageMut> Iterator for IntoIter<S> where for<'a> S::ItemRef<'a>: Read<S> {
 	type Item = S::Item;
 
 	#[inline]
@@ -204,7 +201,7 @@ impl<S: StorageMut> Iterator for IntoIter<S> where for<'a> S::ItemRef<'a>: ItemR
 	}
 }
 
-impl<S: StorageMut> DoubleEndedIterator for IntoIter<S> where for<'a> S::ItemRef<'a>: ItemRead<S> {
+impl<S: StorageMut> DoubleEndedIterator for IntoIter<S> where for<'a> S::ItemRef<'a>: Read<S> {
 	fn next_back(&mut self) -> Option<S::Item> {
 		if self.len > 0 {
 			let addr = match self.end {

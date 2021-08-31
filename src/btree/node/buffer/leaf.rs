@@ -1,7 +1,6 @@
 use super::{
 	StorageMut,
-	Offset,
-	Item
+	Offset
 };
 
 /// Leaf node buffer.

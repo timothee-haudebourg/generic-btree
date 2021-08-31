@@ -10,7 +10,10 @@ use crate::btree::{
 pub mod node;
 pub use node::Node;
 
-// pub type Map<K, V> = crate::Map<Storage<K, V, Slab<Node<K, V>>>>;
+#[cfg(feature="slab")]
+use crate::map::Binding;
+#[cfg(feature="slab")]
+pub type Map<K, V> = crate::Map<Storage<Binding<K, V>, slab::Slab<Node<Binding<K, V>>>>>;
 
 const M: usize = 8;
 

@@ -23,7 +23,6 @@ pub trait InternalRef<S: Storage>: ItemAccess<S> {
 	fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, (usize, usize)> where S: ItemPartialOrd<Q> {
 		match binary_search_min(self, key) {
 			Some((i, eq)) => {
-				let item = self.borrow_item(i).unwrap();
 				if eq {
 					Ok(i)
 				} else {

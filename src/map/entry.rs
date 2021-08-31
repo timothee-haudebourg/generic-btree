@@ -2,24 +2,34 @@ use std::{
 	fmt,
 	ops::Deref
 };
-use super::{
-	Storage,
-	StorageMut,
-	Address,
-	Item
+use crate::btree::{
+	node::Address,
+	node::item::Replace,
+	Insert,
 };
+use super::MapStorageMut;
 
 /// A view into a single entry in a map, which may either be vacant or occupied.
 ///
 /// This enum is constructed from the [`entry`](`Map#entry`) method on [`Map`].
-pub enum Entry<'a, S: Storage> {
+pub enum Entry<'a, S: MapStorageMut>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	Vacant(VacantEntry<'a, S>),
 	Occupied(OccupiedEntry<'a, S>)
 }
 
 use Entry::*;
 
-impl<'a, S: Storage> Entry<'a, S> {
+impl<'a, S: MapStorageMut> Entry<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	/// Gets the address of the entry in the B-Tree.
 	#[inline]
 	pub fn address(&self) -> Address {
@@ -48,12 +58,23 @@ impl<'a, S: Storage> Entry<'a, S> {
 	}
 }
 
-pub enum EntryKey<'a, S: 'a + Storage> {
+pub enum EntryKey<'a, S: 'a + MapStorageMut>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	Occupied(S::KeyRef<'a>),
 	Vacant(&'a S::Key)
 }
 
-impl<'a, S: 'a + Storage> Deref for EntryKey<'a, S> {
+impl<'a, S: 'a + MapStorageMut> Deref for EntryKey<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	S::KeyRef<'a>: Deref<Target=S::Key>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	type Target = S::Key;
 
 	fn deref(&self) -> &Self::Target {
@@ -64,7 +85,14 @@ impl<'a, S: 'a + Storage> Deref for EntryKey<'a, S> {
 	}
 }
 
-impl<'a, S: 'a + Storage> fmt::Debug for EntryKey<'a, S> where S::KeyRef<'a>: fmt::Debug, S::Key: fmt::Debug {
+impl<'a, S: 'a + MapStorageMut> fmt::Debug for EntryKey<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	S::KeyRef<'a>: fmt::Debug,
+	S::Key: fmt::Debug,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			Self::Vacant(key) => key.fmt(f),
@@ -73,13 +101,25 @@ impl<'a, S: 'a + Storage> fmt::Debug for EntryKey<'a, S> where S::KeyRef<'a>: fm
 	}
 }
 
-impl<'a, 'b, S: 'a + Storage, T> PartialEq<&'b T> for EntryKey<'a, S> where S::Key: PartialEq<T> {
+impl<'a, 'b, S: 'a + MapStorageMut, T> PartialEq<&'b T> for EntryKey<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	S::KeyRef<'a>: Deref<Target=S::Key>,
+	S::Key: PartialEq<T>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	fn eq(&self, other: &&'b T) -> bool {
 		self.deref() == *other
 	}
 }
 
-impl<'a, S: StorageMut> Entry<'a, S> {
+impl<'a, S: MapStorageMut> Entry<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	/// Ensures a value is in the entry by inserting the default if empty, and returns
 	/// a mutable reference to the value in the entry.
 	///
@@ -94,7 +134,7 @@ impl<'a, S: StorageMut> Entry<'a, S> {
 	/// assert_eq!(map["poneyland"], 12);
 	/// ```
 	#[inline]
-	pub fn or_insert(self, default: S::Value) -> S::ValueMut<'a> {
+	pub fn or_insert(self, default: S::Value) -> S::ValueMut<'a> where S: Insert<(S::Key, S::Value)> {
 		match self {
 			Occupied(entry) => entry.into_mut(),
 			Vacant(entry) => entry.insert(default),
@@ -117,7 +157,7 @@ impl<'a, S: StorageMut> Entry<'a, S> {
 	/// assert_eq!(map["poneyland"], "hoho".to_string());
 	/// ```
 	#[inline]
-	pub fn or_insert_with<F: FnOnce() -> S::Value>(self, default: F) -> S::ValueMut<'a> {
+	pub fn or_insert_with<F: FnOnce() -> S::Value>(self, default: F) -> S::ValueMut<'a> where S: Insert<(S::Key, S::Value)> {
 		match self {
 			Occupied(entry) => entry.into_mut(),
 			Vacant(entry) => entry.insert(default()),
@@ -141,7 +181,7 @@ impl<'a, S: StorageMut> Entry<'a, S> {
 	/// assert_eq!(map["poneyland"], 9);
 	/// ```
 	#[inline]
-	pub fn or_insert_with_key<F: FnOnce(&S::Key) -> S::Value>(self, default: F) -> S::ValueMut<'a> {
+	pub fn or_insert_with_key<F: FnOnce(&S::Key) -> S::Value>(self, default: F) -> S::ValueMut<'a> where S: Insert<(S::Key, S::Value)> {
 		match self {
 			Occupied(entry) => entry.into_mut(),
 			Vacant(entry) => {
@@ -196,7 +236,7 @@ impl<'a, S: StorageMut> Entry<'a, S> {
 	/// assert_eq!(map["poneyland"], None);
 	/// ```
 	#[inline]
-	pub fn or_default(self) -> S::ValueMut<'a> where S::Value: Default {
+	pub fn or_default(self) -> S::ValueMut<'a> where S::Value: Default, S: Insert<(S::Key, S::Value)> {
 		match self {
 			Occupied(entry) => entry.into_mut(),
 			Vacant(entry) => entry.insert(Default::default()),
@@ -204,7 +244,15 @@ impl<'a, S: StorageMut> Entry<'a, S> {
 	}
 }
 
-impl<'a, S: Storage> fmt::Debug for Entry<'a, S> where S::Key: fmt::Debug, for<'r> S::KeyRef<'r>: fmt::Debug, for<'r> S::ValueRef<'r>: fmt::Debug {
+impl<'a, S: MapStorageMut> fmt::Debug for Entry<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	S::Key: fmt::Debug,
+	for<'r> S::KeyRef<'r>: fmt::Debug,
+	for<'r> S::ValueRef<'r>: fmt::Debug,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	#[inline]
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
@@ -216,13 +264,23 @@ impl<'a, S: Storage> fmt::Debug for Entry<'a, S> where S::Key: fmt::Debug, for<'
 
 /// A view into a vacant entry in a [`Map`].
 /// It is part of the [`Entry`] enum.
-pub struct VacantEntry<'a, S: Storage> {
+pub struct VacantEntry<'a, S: MapStorageMut>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	pub(crate) map: &'a mut S,
 	pub(crate) key: S::Key,
 	pub(crate) addr: Address
 }
 
-impl<'a, S: Storage> VacantEntry<'a, S> {
+impl<'a, S: MapStorageMut> VacantEntry<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	/// Gets the address of the vacant entry in the B-Tree.
 	#[inline]
 	pub fn address(&self) -> Address {
@@ -262,7 +320,13 @@ impl<'a, S: Storage> VacantEntry<'a, S> {
 	}
 }
 
-impl<'a, S: StorageMut> VacantEntry<'a, S> {
+impl<'a, S: MapStorageMut> VacantEntry<'a, S>
+where
+	S: Insert<(S::Key, S::Value)>,
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	/// Sets the value of the entry with the `VacantEntry`'s key,
 	/// and returns a mutable reference to it.
 	///
@@ -279,13 +343,19 @@ impl<'a, S: StorageMut> VacantEntry<'a, S> {
 	/// assert_eq!(map["poneyland"], 37);
 	/// ```
 	#[inline]
-	pub fn insert(self, value: S::Value) -> S::ValueMut<'a> {
-		let addr = self.map.insert_at(self.addr, Item::new(self.key, value));
-		self.map.item_mut(addr).unwrap().into_value_mut()
+	pub fn insert(self, value: S::Value) -> S::ValueMut<'a>  {
+		let addr = self.map.insert_at(self.addr, (self.key, value));
+		self.map.item_mut(addr).unwrap().into().1
 	}
 }
 
-impl<'a, S: Storage> fmt::Debug for VacantEntry<'a, S> where S::Key: fmt::Debug {
+impl<'a, S: MapStorageMut> fmt::Debug for VacantEntry<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	S::Key: fmt::Debug,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	#[inline]
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		f.debug_tuple("VacantEntry").field(self.key()).finish()
@@ -299,7 +369,12 @@ pub struct OccupiedEntry<'a, S> {
 	pub(crate) addr: Address
 }
 
-impl<'a, S: Storage> OccupiedEntry<'a, S> {
+impl<'a, S: MapStorageMut> OccupiedEntry<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	/// Gets the address of the occupied entry in the B-Tree.
 	#[inline]
 	pub fn address(&self) -> Address {
@@ -322,7 +397,7 @@ impl<'a, S: Storage> OccupiedEntry<'a, S> {
 	/// ```
 	#[inline]
 	pub fn get(&self) -> S::ValueRef<'_> {
-		self.map.item(self.addr).unwrap().value()
+		self.map.item(self.addr).unwrap().into().1
 	}
 
 	/// Gets a reference to the key in the entry.
@@ -337,11 +412,16 @@ impl<'a, S: Storage> OccupiedEntry<'a, S> {
 	/// ```
 	#[inline]
 	pub fn key(&self) -> S::KeyRef<'_> {
-		self.map.item(self.addr).unwrap().key()
+		self.map.item(self.addr).unwrap().into().0
 	}
 }
 
-impl<'a, S: StorageMut> OccupiedEntry<'a, S> {
+impl<'a, S: MapStorageMut> OccupiedEntry<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	/// Gets a mutable reference to the value in the entry.
 	///
 	/// If you need a reference to the OccupiedEntry that may outlive
@@ -367,7 +447,7 @@ impl<'a, S: StorageMut> OccupiedEntry<'a, S> {
 	/// ```
 	#[inline]
 	pub fn get_mut(&mut self) -> S::ValueMut<'_> {
-		self.map.item_mut(self.addr).unwrap().into_value_mut()
+		self.map.item_mut(self.addr).unwrap().into().1
 	}
 
 	/// Sets the value of the entry with the OccupiedEntry's key,
@@ -387,8 +467,8 @@ impl<'a, S: StorageMut> OccupiedEntry<'a, S> {
 	/// assert_eq!(map["poneyland"], 15);
 	/// ```
 	#[inline]
-	pub fn insert(&mut self, value: S::Value) -> S::Value {
-		self.map.item_mut(self.addr).unwrap().set_value(value)
+	pub fn insert<'r, V>(&'r mut self, value: V) -> <S::ItemMut<'r> as Replace<S, V>>::Output where S::ItemMut<'r>: Replace<S, V> {
+		self.map.item_mut(self.addr).unwrap().replace(value)
 	}
 
 	/// Converts the entry into a mutable reference to its value.
@@ -414,7 +494,7 @@ impl<'a, S: StorageMut> OccupiedEntry<'a, S> {
 	/// ```
 	#[inline]
 	pub fn into_mut(self) -> S::ValueMut<'a> {
-		self.map.item_mut(self.addr).unwrap().into_value_mut()
+		self.map.item_mut(self.addr).unwrap().into().1
 	}
 
 	/// Takes the value of the entry out of the map, and returns it.
@@ -435,8 +515,8 @@ impl<'a, S: StorageMut> OccupiedEntry<'a, S> {
 	/// // println!("{}", map["poneyland"]);
 	/// ```
 	#[inline]
-    pub fn remove(self) -> S::Value {
-		self.map.remove_at(self.addr).unwrap().0.into_value()
+    pub fn remove(self) -> S::Value where S::Item: Into<S::Value> {
+		self.map.remove_at(self.addr).unwrap().0.into()
 	}
 
 	/// Take ownership of the key and value from the map.
@@ -458,12 +538,19 @@ impl<'a, S: StorageMut> OccupiedEntry<'a, S> {
 	/// // println!("{}", map["poneyland"]);
 	/// ```
 	#[inline]
-	pub fn remove_entry(self) -> Item<S::Key, S::Value> {
+	pub fn remove_entry(self) -> S::Item {
 		self.map.remove_at(self.addr).unwrap().0
 	}
 }
 
-impl<'a, S: Storage> fmt::Debug for OccupiedEntry<'a, S> where for<'r> S::KeyRef<'r>: fmt::Debug, for<'r>  S::ValueRef<'r>: fmt::Debug {
+impl<'a, S: MapStorageMut> fmt::Debug for OccupiedEntry<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::KeyRef<'r>: fmt::Debug,
+	for<'r> S::ValueRef<'r>: fmt::Debug,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	#[inline]
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		f.debug_struct("OccupiedEntry").field("key", &self.key()).field("value", &self.get()).finish()
@@ -481,7 +568,12 @@ pub struct EntriesMut<'a, S> {
 	len: usize
 }
 
-impl<'a, S: Storage> EntriesMut<'a, S> {
+impl<'a, S: MapStorageMut> EntriesMut<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	/// Create a new iterator over all the items of the map.
 	#[inline]
 	pub(crate) fn new(btree: &'a mut S) -> EntriesMut<'a, S> {
@@ -501,7 +593,12 @@ impl<'a, S: Storage> EntriesMut<'a, S> {
 	}
 }
 
-impl<'a, S: StorageMut> EntriesMut<'a, S> {
+impl<'a, S: MapStorageMut> EntriesMut<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	/// Get the next visited item without moving the iterator position.
 	#[inline]
 	pub fn peek_mut(&'a mut self) -> Option<S::ItemMut<'a>> {
@@ -540,15 +637,15 @@ impl<'a, S: StorageMut> EntriesMut<'a, S> {
 	/// If this rule is not respected, the data structure will become unusable
 	/// (invalidate the specification of every method of the API).
 	#[inline]
-	pub fn insert(&mut self, key: S::Key, value: S::Value) {
-		let addr = self.btree.insert_at(self.addr, Item::new(key, value));
+	pub fn insert(&mut self, key: S::Key, value: S::Value) where S: Insert<(S::Key, S::Value)> {
+		let addr = self.btree.insert_at(self.addr, (key, value));
 		self.btree.next_item_or_back_address(addr);
 		self.len += 1;
 	}
 
 	/// Remove the next item and return it.
 	#[inline]
-	pub fn remove(&mut self) -> Option<Item<S::Key, S::Value>> {
+	pub fn remove(&mut self) -> Option<S::Item> {
 		match self.btree.remove_at(self.addr) {
 			Some((item, addr)) => {
 				self.len -= 1;
@@ -560,7 +657,12 @@ impl<'a, S: StorageMut> EntriesMut<'a, S> {
 	}
 }
 
-impl<'a, S: StorageMut> Iterator for EntriesMut<'a, S> {
+impl<'a, S: MapStorageMut> Iterator for EntriesMut<'a, S>
+where
+	S::Item: Into<(S::Key, S::Value)>,
+	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
+	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+{
 	type Item = S::ItemMut<'a>;
 
 	#[inline]
