@@ -10,7 +10,7 @@ use std::{
 	}
 };
 use super::{
-	ItemPartialOrd,
+	KeyPartialOrd,
 	Storage,
 	StorageMut,
 	Address,
@@ -537,7 +537,7 @@ pub struct Range<'a, S> {
 }
 
 impl<'a, S: Storage> Range<'a, S> {
-	pub(crate) fn new<T, R>(btree: &'a S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, S: ItemPartialOrd<T> {
+	pub(crate) fn new<T, R>(btree: &'a S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, S: KeyPartialOrd<T> {
 		if !is_valid_range(&range) {
 			panic!("Invalid range")
 		}
@@ -624,7 +624,7 @@ pub struct RangeMut<'a, S> {
 }
 
 impl<'a, S: StorageMut> RangeMut<'a, S> {
-	pub(crate) fn new<T, R>(btree: &'a mut S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, S: ItemPartialOrd<T> {
+	pub(crate) fn new<T, R>(btree: &'a mut S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, S: KeyPartialOrd<T> {
 		if !is_valid_range(&range) {
 			panic!("Invalid range")
 		}

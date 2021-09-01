@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use crate::btree::{
-	ItemPartialOrd,
+	KeyPartialOrd,
 	Storage,
 	node::{
 		Offset,
@@ -15,16 +15,16 @@ use crate::btree::{
 pub fn binary_search_min<'r, S: 'r + Storage, A: ItemAccess<S> + ?Sized, Q: ?Sized>(
 	sorted_items: &'r A,
 	key: &Q
-) -> Option<(Offset, bool)> where S: ItemPartialOrd<Q> {
-	if sorted_items.is_empty() || S::item_partial_cmp(&sorted_items.borrow_item(0.into()).unwrap(), key).map(Ordering::is_gt).unwrap_or(false) {
+) -> Option<(Offset, bool)> where S: KeyPartialOrd<Q> {
+	if sorted_items.is_empty() || S::key_partial_cmp(&sorted_items.borrow_item(0.into()).unwrap(), key).map(Ordering::is_gt).unwrap_or(false) {
 		None
 	} else {
 		let mut i: Offset = 0.into();
 		let mut j: Offset = (sorted_items.item_count() - 1).into();
 
 		let j_item = sorted_items.borrow_item(j).unwrap();
-		if S::item_partial_cmp(&j_item, key).map(Ordering::is_le).unwrap_or(false) {
-			let eq = S::item_partial_cmp(&j_item, key).map(Ordering::is_eq).unwrap_or(false);
+		if S::key_partial_cmp(&j_item, key).map(Ordering::is_le).unwrap_or(false) {
+			let eq = S::key_partial_cmp(&j_item, key).map(Ordering::is_eq).unwrap_or(false);
 			return Some((j, eq))
 		}
 
@@ -36,7 +36,7 @@ pub fn binary_search_min<'r, S: 'r + Storage, A: ItemAccess<S> + ?Sized, Q: ?Siz
 		while j-i > 1 {
 			let k = (i + j) / 2;
 
-			if S::item_partial_cmp(&sorted_items.borrow_item(k).unwrap(), key).map(Ordering::is_gt).unwrap_or(false) {
+			if S::key_partial_cmp(&sorted_items.borrow_item(k).unwrap(), key).map(Ordering::is_gt).unwrap_or(false) {
 				j = k;
 				// sorted_items[k].key > key --> sorted_items[j] > key
 			} else {
@@ -45,7 +45,7 @@ pub fn binary_search_min<'r, S: 'r + Storage, A: ItemAccess<S> + ?Sized, Q: ?Siz
 			}
 		}
 
-		let eq = S::item_partial_cmp(&sorted_items.borrow_item(i).unwrap(), key).map(Ordering::is_eq).unwrap_or(false);
+		let eq = S::key_partial_cmp(&sorted_items.borrow_item(i).unwrap(), key).map(Ordering::is_eq).unwrap_or(false);
 		Some((i, eq))
 	}
 }

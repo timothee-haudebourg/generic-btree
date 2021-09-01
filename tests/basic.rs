@@ -9,6 +9,10 @@ use generic_btree::{
 	StorageMut,
 	slab::{
 		Map
+	},
+	map::{
+		Binding,
+		Inserted
 	}
 };
 
@@ -47,7 +51,7 @@ pub fn remove() {
 	for (key, _) in &items {
 		eprintln!("removing: {}", key);
 
-		map.remove(&key);
+		map.remove(key);
 
 		map.btree().validate().expect("validation failed")
 	}
@@ -93,7 +97,7 @@ pub fn insert_addresses() {
 
 	for (key, value) in &ITEMS {
 		let addr = map.btree().address_of(key).err().unwrap();
-		let new_addr = map.btree_mut().insert_exactly_at(addr, Item::new(*key, *value), None);
+		let new_addr = map.btree_mut().insert_exactly_at(addr, Binding::new(*key, *value), None);
 		assert_eq!(&map.btree().item(new_addr).unwrap().value, value);
 	}
 }
@@ -117,7 +121,7 @@ pub fn remove_addresses() {
 			match btree.address_of(key) {
 				Ok(addr) => {
 					let (_, addr) = btree.remove_at(addr).unwrap();
-					btree.insert_at(addr, Item::new(*key, *value));
+					btree.insert_at(addr, Inserted(*key, *value));
 					btree.validate().expect("validation failed");
 				},
 				Err(_) => break

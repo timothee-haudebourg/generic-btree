@@ -3,7 +3,7 @@ use std::{
 };
 use crate::util::binary_search_min;
 use super::{
-	ItemPartialOrd,
+	KeyPartialOrd,
 	Storage,
 	StorageMut,
 	Offset,
@@ -20,7 +20,7 @@ pub trait InternalRef<S: Storage>: ItemAccess<S> {
 	/// If the key matches no item in this node,
 	/// this funtion returns the index and id of the child that may match the key.
 	#[inline]
-	fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, (usize, usize)> where S: ItemPartialOrd<Q> {
+	fn offset_of<Q: ?Sized>(&self, key: &Q) -> Result<Offset, (usize, usize)> where S: KeyPartialOrd<Q> {
 		match binary_search_min(self, key) {
 			Some((i, eq)) => {
 				if eq {
@@ -107,7 +107,7 @@ pub trait InternalConst<'a, S: 'a + Storage>: InternalRef<S> {
 	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
 
 	#[inline]
-	fn get<Q: ?Sized>(&self, key: &Q) -> Result<S::ItemRef<'a>, usize> where for<'r> S: ItemPartialOrd<Q> {
+	fn get<Q: ?Sized>(&self, key: &Q) -> Result<S::ItemRef<'a>, usize> where for<'r> S: KeyPartialOrd<Q> {
 		match binary_search_min(self, key) {
 			Some((i, eq)) => {
 				let item = self.item(i).unwrap();
@@ -156,7 +156,7 @@ pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<S> {
 	fn append(&mut self, separator: S::Item, other: S::InternalNode) -> Offset;
 
 	#[inline]
-	fn get_mut<Q: ?Sized>(self, key: &Q) -> Result<S::ItemMut<'a>, usize> where S: ItemPartialOrd<Q> {
+	fn get_mut<Q: ?Sized>(self, key: &Q) -> Result<S::ItemMut<'a>, usize> where S: KeyPartialOrd<Q> {
 		match binary_search_min(&self, key) {
 			Some((i, eq)) => {
 				let child_id = self.child_id(1usize + i.unwrap());

@@ -20,6 +20,7 @@ use crate::{
 	btree::{
 		ItemOrd,
 		ItemPartialOrd,
+		KeyPartialOrd,
 		Insert,
 		UpdateEntry,
 		node::item::{
@@ -47,31 +48,53 @@ pub struct Inserted<K, V>(pub K, pub V);
 /// both the key and value are updated.
 pub struct Replacing<K, V>(pub K, pub V);
 
-pub trait MapStorage: Storage
-where
-	for<'a> Self::ItemRef<'a>: Into<(Self::KeyRef<'a>, Self::ValueRef<'a>)>
-{
-	type KeyRef<'a>;
-	type ValueRef<'a>;
+pub trait MapStorage: Storage {
+	type KeyRef<'a> where Self: 'a;
+	type ValueRef<'a> where Self: 'a;
+
+	fn split_ref<'a>(item: Self::ItemRef<'a>) -> (Self::KeyRef<'a>, Self::ValueRef<'a>) where Self: 'a;
+
+	fn key_ref<'a>(item: Self::ItemRef<'a>) -> Self::KeyRef<'a> where Self: 'a {
+		Self::split_ref(item).0
+	}
+
+	fn value_ref<'a>(item: Self::ItemRef<'a>) -> Self::ValueRef<'a> where Self: 'a {
+		Self::split_ref(item).1
+	}
 }
 
-pub trait MapStorageMut: StorageMut + MapStorage
-where
-	Self::Item: Into<(Self::Key, Self::Value)>,
-	for<'a> Self::ItemRef<'a>: Into<(Self::KeyRef<'a>, Self::ValueRef<'a>)>,
-	for<'a> Self::ItemMut<'a>: Into<(Self::KeyRef<'a>, Self::ValueMut<'a>)>
-{
+pub trait MapStorageMut: StorageMut + MapStorage {
 	type Key;
 	type Value;
 
-	type ValueMut<'a>;
+	type ValueMut<'a> where Self: 'a;
+
+	fn split(item: Self::Item) -> (Self::Key, Self::Value);
+
+	fn key(item: Self::Item) -> Self::Key {
+		Self::split(item).0
+	}
+
+	fn value(item: Self::Item) -> Self::Value {
+		Self::split(item).1
+	}
+
+	fn split_mut<'a>(item: Self::ItemMut<'a>) -> (Self::KeyRef<'a>, Self::ValueMut<'a>) where Self: 'a;
+
+	fn key_mut<'a>(item: Self::ItemMut<'a>) -> Self::KeyRef<'a> where Self: 'a {
+		Self::split_mut(item).0
+	}
+
+	fn value_mut<'a>(item: Self::ItemMut<'a>) -> Self::ValueMut<'a> where Self: 'a {
+		Self::split_mut(item).1
+	}
 }
 
 pub struct Map<S> {
 	btree: S
 }
 
-impl<S: MapStorage> Map<S> where for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S::ValueRef<'a>)> {
+impl<S: MapStorage> Map<S> {
 	/// Create a new empty map.
 	pub fn new() -> Self where S: Default {
 		Self {
@@ -129,8 +152,8 @@ impl<S: MapStorage> Map<S> where for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S:
 	/// assert_eq!(map.get_key_value(&2), None);
 	/// ```
 	#[inline]
-	pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<S::ValueRef<'_>> where S: ItemPartialOrd<Q> {
-		self.btree.get(key).map(|item| item.into().1)
+	pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<S::ValueRef<'_>> where S: KeyPartialOrd<Q> {
+		self.btree.get(key).map(|item| S::split_ref(item).1)
 	}
 
 	/// Returns the key-value pair corresponding to the supplied key.
@@ -149,8 +172,8 @@ impl<S: MapStorage> Map<S> where for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S:
 	/// assert_eq!(map.get_key_value(&2), None);
 	/// ```
 	#[inline]
-	pub fn get_key_value<Q: ?Sized>(&self, k: &Q) -> Option<(S::KeyRef<'_>, S::ValueRef<'_>)> where S: ItemPartialOrd<Q> {
-		self.btree.get_item(k).map(|item| item.into())
+	pub fn get_key_value<Q: ?Sized>(&self, k: &Q) -> Option<(S::KeyRef<'_>, S::ValueRef<'_>)> where S: KeyPartialOrd<Q> {
+		self.btree.get_item(k).map(S::split_ref)
 	}
 
 	/// Returns the first key-value pair in the map.
@@ -169,7 +192,7 @@ impl<S: MapStorage> Map<S> where for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S:
 	/// ```
 	#[inline]
 	pub fn first_key_value(&self) -> Option<(S::KeyRef<'_>, S::ValueRef<'_>)> {
-		self.btree.first_item().map(|item| item.into())
+		self.btree.first_item().map(S::split_ref)
 	}
 
 	/// Returns the last key-value pair in the map.
@@ -189,7 +212,7 @@ impl<S: MapStorage> Map<S> where for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S:
 	/// ```
 	#[inline]
 	pub fn last_key_value(&self) -> Option<(S::KeyRef<'_>, S::ValueRef<'_>)> {
-		self.btree.last_item().map(|item| item.into())
+		self.btree.last_item().map(S::split_ref)
 	}
 
 	/// Gets an iterator over the entries of the map, sorted by key.
@@ -247,7 +270,7 @@ impl<S: MapStorage> Map<S> where for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S:
 	pub fn range<T: ?Sized, R>(&self, range: R) -> Range<S>
 	where
 		T: Ord,
-		S: ItemPartialOrd<T>,
+		S: KeyPartialOrd<T>,
 		R: RangeBounds<T>,
 	{
 		Range::new(&self.btree, range)
@@ -306,7 +329,7 @@ impl<S: MapStorage> Map<S> where for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S:
 	/// assert_eq!(map.contains_key(&2), false);
 	/// ```
 	#[inline]
-	pub fn contains<Q: ?Sized>(&self, key: &Q) -> bool where S: ItemPartialOrd<Q> {
+	pub fn contains<Q: ?Sized>(&self, key: &Q) -> bool where S: KeyPartialOrd<Q> {
 		self.btree.get(key).is_some()
 	}
 
@@ -324,12 +347,7 @@ impl<S: MapStorage> Map<S> where for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S:
 	}
 }
 
-impl<S: MapStorageMut> Map<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S::ValueRef<'a>)>,
-	for<'a> S::ItemMut<'a>: Into<(S::KeyRef<'a>, S::ValueMut<'a>)>
-{
+impl<S: MapStorageMut> Map<S> {
 	// TODO clear
 
 	/// Returns a mutable reference to the value corresponding to the key.
@@ -350,13 +368,13 @@ where
 	/// assert_eq!(map[&1], "b");
 	/// ```
 	#[inline]
-	pub fn get_mut<Q>(&mut self, key: &Q) -> Option<S::ValueMut<'_>> where S: ItemPartialOrd<Q> {
-		self.btree.get_mut(key).map(|item| item.into().1)
+	pub fn get_mut<Q>(&mut self, key: &Q) -> Option<S::ValueMut<'_>> where S: KeyPartialOrd<Q> {
+		self.btree.get_mut(key).map(S::value_mut)
 	}
 
 	/// Gets the given key's corresponding entry in the map for in-place manipulation.
 	#[inline]
-	pub fn entry(&mut self, key: S::Key) -> Entry<S> where S: ItemPartialOrd<S::Key> {
+	pub fn entry(&mut self, key: S::Key) -> Entry<S> where S: KeyPartialOrd<S::Key> {
 		match self.btree.address_of(&key) {
 			Ok(addr) => {
 				Entry::Occupied(OccupiedEntry {
@@ -448,7 +466,7 @@ where
 	#[inline]
 	pub fn insert<'r>(&'r mut self, key: S::Key, value: S::Value) -> Option<S::Value>
 	where
-		S: Insert<Inserted<S::Key, S::Value>> + ItemPartialOrd<Inserted<S::Key, S::Value>>,
+		S: Insert<Inserted<S::Key, S::Value>> + KeyPartialOrd<Inserted<S::Key, S::Value>>,
 		S::ItemMut<'r>: Replace<S, Inserted<S::Key, S::Value>, Output=S::Value>
 	{
 		self.btree.insert(Inserted(key, value)).map(Into::into)
@@ -458,7 +476,7 @@ where
 	#[inline]
 	pub fn replace<'r>(&'r mut self, key: S::Key, value: S::Value) -> Option<S::Item>
 	where
-		S: Insert<Replacing<S::Key, S::Value>> + ItemPartialOrd<Replacing<S::Key, S::Value>>,
+		S: Insert<Replacing<S::Key, S::Value>> + KeyPartialOrd<Replacing<S::Key, S::Value>>,
 		S::ItemMut<'r>: Replace<S, Replacing<S::Key, S::Value>, Output=S::Item>
 	{
 		self.btree.insert(Replacing(key, value))
@@ -527,8 +545,8 @@ where
 	/// assert_eq!(map.remove(&1), None);
 	/// ```
 	#[inline]
-	pub fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<S::Value> where S: ItemPartialOrd<Q> {
-		self.btree.remove(key).map(|item| item.into().1)
+	pub fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<S::Value> where S: KeyPartialOrd<Q> {
+		self.btree.remove(key).map(S::value)
 	}
 
 	/// Removes a key from the map, returning the stored key and value if the key
@@ -550,8 +568,8 @@ where
 	/// assert_eq!(map.remove_entry(&1), None);
 	/// ```
 	#[inline]
-	pub fn remove_entry<Q: ?Sized>(&mut self, key: &Q) -> Option<(S::Key, S::Value)> where S: ItemPartialOrd<Q> {
-		self.btree.remove(key).map(|item| item.into())
+	pub fn remove_entry<Q: ?Sized>(&mut self, key: &Q) -> Option<(S::Key, S::Value)> where S: KeyPartialOrd<Q> {
+		self.btree.remove(key).map(S::split)
 	}
 
 	/// General-purpose update function.
@@ -570,7 +588,7 @@ where
 	#[inline]
 	pub fn update<T, F>(&mut self, key: S::Key, action: F) -> T
 	where
-		S: ItemPartialOrd<S::Key> + Insert<(S::Key, S::Value)>,
+		S: KeyPartialOrd<S::Key> + Insert<(S::Key, S::Value)>,
 		F: FnOnce(Option<S::Value>) -> (Option<S::Value>, T),
 		for<'r> S::ItemMut<'r>: Read<S> + Write<S>
 	{
@@ -580,7 +598,7 @@ where
 				(new_value.map(|value| (key, value)), t)
 			},
 			UpdateEntry::Occupied(item) => {
-				let (key, value) = item.into();
+				let (key, value) = S::split(item);
 				let (new_value, t) = action(Some(value));
 				(new_value.map(|value| (key, value)), t)
 			}
@@ -727,7 +745,7 @@ where
 	pub fn range_mut<T: ?Sized, R>(&mut self, range: R) -> RangeMut<S>
 	where
 		T: Ord,
-		S: ItemPartialOrd<T>,
+		S: KeyPartialOrd<T>,
 		R: RangeBounds<T>,
 	{
 		RangeMut::new(&mut self.btree, range)
@@ -818,27 +836,15 @@ where
 	}
 }
 
-impl<S: MapStorage, T: MapStorage> PartialEq<Map<T>> for Map<S>
-where
-	T: for<'r> ItemPartialOrd<S::ItemRef<'r>>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> T::ItemRef<'r>: Into<(T::KeyRef<'r>, T::ValueRef<'r>)>
-{
+impl<S: MapStorage, T: MapStorage> PartialEq<Map<T>> for Map<S> where T: ItemPartialOrd<S> {
 	fn eq(&self, other: &Map<T>) -> bool {
 		self.btree.eq(&other.btree)
 	}
 }
 
-impl<S: MapStorage> Eq for Map<S>
-where
-	S: ItemOrd,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{}
+impl<S: MapStorage> Eq for Map<S> where S: ItemOrd {}
 
-impl<S: MapStorage + Default> Default for Map<S>
-where
-	for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S::ValueRef<'a>)>
-{
+impl<S: MapStorage + Default> Default for Map<S> {
 	#[inline]
 	fn default() -> Self {
 		Self::new()
@@ -847,10 +853,8 @@ where
 
 impl<S: MapStorageMut + Default> FromIterator<(S::Key, S::Value)> for Map<S>
 where
-	S: Insert<Inserted<S::Key, S::Value>> + ItemPartialOrd<Inserted<S::Key, S::Value>>,
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S::ValueRef<'a>)>,
-	for<'a> S::ItemMut<'a>: Into<(S::KeyRef<'a>, S::ValueMut<'a>)> + Replace<S, Inserted<S::Key, S::Value>, Output = S::Value>
+	S: Insert<Inserted<S::Key, S::Value>> + KeyPartialOrd<Inserted<S::Key, S::Value>>,
+	for<'a> S::ItemMut<'a>: Replace<S, Inserted<S::Key, S::Value>, Output = S::Value>
 {
 	#[inline]
 	fn from_iter<T>(iter: T) -> Self where T: IntoIterator<Item = (S::Key, S::Value)> {
@@ -866,10 +870,8 @@ where
 
 impl<S: MapStorageMut> Extend<(S::Key, S::Value)> for Map<S>
 where
-	S: Insert<Inserted<S::Key, S::Value>> + ItemPartialOrd<Inserted<S::Key, S::Value>>,
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'a> S::ItemRef<'a>: Into<(S::KeyRef<'a>, S::ValueRef<'a>)>,
-	for<'a> S::ItemMut<'a>: Into<(S::KeyRef<'a>, S::ValueMut<'a>)> + Replace<S, Inserted<S::Key, S::Value>, Output = S::Value>
+	S: Insert<Inserted<S::Key, S::Value>> + KeyPartialOrd<Inserted<S::Key, S::Value>>,
+	for<'a> S::ItemMut<'a>: Replace<S, Inserted<S::Key, S::Value>, Output = S::Value>
 {
 	#[inline]
 	fn extend<T>(&mut self, iter: T) where T: IntoIterator<Item = (S::Key, S::Value)> {
@@ -881,9 +883,7 @@ where
 
 impl<S: MapStorage, T: MapStorage> PartialOrd<Map<T>> for Map<S>
 where
-	T: for<'r> ItemPartialOrd<S::ItemRef<'r>>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> T::ItemRef<'r>: Into<(T::KeyRef<'r>, T::ValueRef<'r>)>
+	for<'r> T: ItemPartialOrd<S>
 {
 	fn partial_cmp(&self, other: &Map<T>) -> Option<Ordering> {
 		self.btree.partial_cmp(&other.btree)
@@ -892,8 +892,7 @@ where
 
 impl<S: MapStorage> Ord for Map<S>
 where
-	S: ItemOrd,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
+	S: ItemOrd
 {
 	fn cmp(&self, other: &Self) -> Ordering {
 		self.btree.cmp(&other.btree)
@@ -902,7 +901,7 @@ where
 
 impl<S: MapStorage> Hash for Map<S>
 where
-	for<'r> S::ItemRef<'r>: Hash + Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
+	for<'r> S::ItemRef<'r>: Hash
 {
 	#[inline]
 	fn hash<H: Hasher>(&self, h: &mut H) {
@@ -910,17 +909,11 @@ where
 	}
 }
 
-pub struct Iter<'a, S: MapStorage>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+pub struct Iter<'a, S: MapStorage> {
 	inner: crate::btree::Iter<'a, S>
 }
 
-impl<'a, S: MapStorage> Iter<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: MapStorage> Iter<'a, S> {
 	#[inline]
 	fn new(btree: &'a S) -> Self {
 		Self {
@@ -929,10 +922,7 @@ where
 	}
 }
 
-impl<'a, S: 'a + MapStorage> Iterator for Iter<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: 'a + MapStorage> Iterator for Iter<'a, S> {
 	type Item = (S::KeyRef<'a>, S::ValueRef<'a>);
 
 	#[inline]
@@ -942,27 +932,18 @@ where
 
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into())
+		self.inner.next().map(S::split_ref)
 	}
 }
 
-impl<'a, S: 'a + MapStorage> FusedIterator for Iter<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{}
+impl<'a, S: 'a + MapStorage> FusedIterator for Iter<'a, S> {}
 
-impl<'a, S: 'a + MapStorage> ExactSizeIterator for Iter<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{}
+impl<'a, S: 'a + MapStorage> ExactSizeIterator for Iter<'a, S> {}
 
-impl<'a, S: 'a + MapStorage> DoubleEndedIterator for Iter<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: 'a + MapStorage> DoubleEndedIterator for Iter<'a, S> {
 	#[inline]
 	fn next_back(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into())
+		self.inner.next().map(S::split_ref)
 	}
 }
 
@@ -970,10 +951,7 @@ pub struct Keys<'a, S> {
 	inner: crate::btree::Iter<'a, S>
 }
 
-impl<'a, S: MapStorage> Keys<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: MapStorage> Keys<'a, S> {
 	#[inline]
 	fn new(btree: &'a S) -> Self {
 		Self {
@@ -982,10 +960,7 @@ where
 	}
 }
 
-impl<'a, S: 'a + MapStorage> Iterator for Keys<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: 'a + MapStorage> Iterator for Keys<'a, S> {
 	type Item = S::KeyRef<'a>;
 
 	#[inline]
@@ -995,20 +970,14 @@ where
 
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into().0)
+		self.inner.next().map(S::key_ref)
 	}
 }
 
-impl<'a, S: 'a + MapStorage> FusedIterator for Keys<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{}
+impl<'a, S: 'a + MapStorage> FusedIterator for Keys<'a, S> {}
 
 
-impl<'a, S: 'a + MapStorage> ExactSizeIterator for Keys<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{}
+impl<'a, S: 'a + MapStorage> ExactSizeIterator for Keys<'a, S> {}
 
 impl<'a, S: 'a + MapStorage> DoubleEndedIterator for Keys<'a, S>
 where
@@ -1024,10 +993,7 @@ pub struct Values<'a, S> {
 	inner: crate::btree::Iter<'a, S>
 }
 
-impl<'a, S: MapStorage> Values<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: MapStorage> Values<'a, S> {
 	#[inline]
 	fn new(btree: &'a S) -> Self {
 		Self {
@@ -1036,10 +1002,7 @@ where
 	}
 }
 
-impl<'a, S: 'a + MapStorage> Iterator for Values<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: 'a + MapStorage> Iterator for Values<'a, S> {
 	type Item = S::ValueRef<'a>;
 
 	#[inline]
@@ -1049,27 +1012,18 @@ where
 
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into().1)
+		self.inner.next().map(S::value_ref)
 	}
 }
 
-impl<'a, S: 'a + MapStorage> FusedIterator for Values<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{}
+impl<'a, S: 'a + MapStorage> FusedIterator for Values<'a, S> {}
 
-impl<'a, S: 'a + MapStorage> ExactSizeIterator for Values<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{}
+impl<'a, S: 'a + MapStorage> ExactSizeIterator for Values<'a, S> {}
 
-impl<'a, S: 'a + MapStorage> DoubleEndedIterator for Values<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: 'a + MapStorage> DoubleEndedIterator for Values<'a, S> {
 	#[inline]
 	fn next_back(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into().1)
+		self.inner.next().map(S::value_ref)
 	}
 }
 
@@ -1077,12 +1031,7 @@ pub struct ValuesMut<'a, S> {
 	inner: crate::btree::IterMut<'a, S>
 }
 
-impl<'a, S: MapStorageMut> ValuesMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<'a, S: MapStorageMut> ValuesMut<'a, S> {
 	#[inline]
 	fn new(btree: &'a mut S) -> Self {
 		Self {
@@ -1091,12 +1040,7 @@ where
 	}
 }
 
-impl<'a, S: 'a + MapStorageMut> Iterator for ValuesMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<'a, S: 'a + MapStorageMut> Iterator for ValuesMut<'a, S> {
 	type Item = S::ValueMut<'a>;
 
 	#[inline]
@@ -1106,40 +1050,22 @@ where
 
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into().1)
+		self.inner.next().map(S::value_mut)
 	}
 }
 
-impl<'a, S: 'a + MapStorageMut> FusedIterator for ValuesMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<'a, S: 'a + MapStorageMut> FusedIterator for ValuesMut<'a, S> {}
 
-impl<'a, S: 'a + MapStorageMut> ExactSizeIterator for ValuesMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<'a, S: 'a + MapStorageMut> ExactSizeIterator for ValuesMut<'a, S> {}
 
-impl<'a, S: 'a + MapStorageMut> DoubleEndedIterator for ValuesMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<'a, S: 'a + MapStorageMut> DoubleEndedIterator for ValuesMut<'a, S> {
 	#[inline]
 	fn next_back(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into().1)
+		self.inner.next().map(S::value_mut)
 	}
 }
 
-impl<'a, S: MapStorage> IntoIterator for &'a Map<S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: MapStorage> IntoIterator for &'a Map<S> {
 	type IntoIter = Iter<'a, S>;
 	type Item = (S::KeyRef<'a>, S::ValueRef<'a>);
 
@@ -1153,12 +1079,7 @@ pub struct IterMut<'a, S> {
 	inner: crate::btree::IterMut<'a, S>
 }
 
-impl<'a, S: MapStorageMut> IterMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<'a, S: MapStorageMut> IterMut<'a, S> {
 	#[inline]
 	fn new(btree: &'a mut S) -> Self {
 		Self {
@@ -1167,12 +1088,7 @@ where
 	}
 }
 
-impl<'a, S: 'a + MapStorageMut> Iterator for IterMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<'a, S: 'a + MapStorageMut> Iterator for IterMut<'a, S> {
 	type Item = (S::KeyRef<'a>, S::ValueMut<'a>);
 
 	#[inline]
@@ -1182,42 +1098,22 @@ where
 
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into())
+		self.inner.next().map(S::split_mut)
 	}
 }
 
-impl<'a, S: 'a + MapStorageMut> FusedIterator for IterMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<'a, S: 'a + MapStorageMut> FusedIterator for IterMut<'a, S> {}
 
-impl<'a, S: 'a + MapStorageMut> ExactSizeIterator for IterMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<'a, S: 'a + MapStorageMut> ExactSizeIterator for IterMut<'a, S> {}
 
-impl<'a, S: 'a + MapStorageMut> DoubleEndedIterator for IterMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<'a, S: 'a + MapStorageMut> DoubleEndedIterator for IterMut<'a, S> {
 	#[inline]
 	fn next_back(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into())
+		self.inner.next().map(S::split_mut)
 	}
 }
 
-impl<'a, S: 'a + MapStorageMut> IntoIterator for &'a mut Map<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<'a, S: 'a + MapStorageMut> IntoIterator for &'a mut Map<S> {
 	type IntoIter = IterMut<'a, S>;
 	type Item = (S::KeyRef<'a>, S::ValueMut<'a>);
 
@@ -1231,12 +1127,7 @@ pub struct IntoIter<S> {
 	inner: crate::btree::IntoIter<S>
 }
 
-impl<S: MapStorageMut> IntoIter<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<S: MapStorageMut> IntoIter<S> {
 	pub(crate) fn new(btree: S) -> Self {
 		Self {
 			inner: btree.into_iter()
@@ -1244,25 +1135,13 @@ where
 	}
 }
 
-impl<S: MapStorageMut> FusedIterator for IntoIter<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<S: MapStorageMut> FusedIterator for IntoIter<S> where for<'r> S::ItemRef<'r>: Read<S> {}
 
-impl<S: MapStorageMut> ExactSizeIterator for IntoIter<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<S: MapStorageMut> ExactSizeIterator for IntoIter<S> where for<'r> S::ItemRef<'r>: Read<S> {}
 
 impl<S: MapStorageMut> Iterator for IntoIter<S>
 where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+	for<'r> S::ItemRef<'r>: Read<S>
 {
 	type Item = (S::Key, S::Value);
 
@@ -1273,19 +1152,17 @@ where
 
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into())
+		self.inner.next().map(S::split)
 	}
 }
 
 impl<S: MapStorageMut> DoubleEndedIterator for IntoIter<S>
 where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+	for<'r> S::ItemRef<'r>: Read<S>
 {
 	#[inline]
 	fn next_back(&mut self) -> Option<Self::Item> {
-		self.inner.next_back().map(|item| item.into())
+		self.inner.next_back().map(S::split)
 	}
 }
 
@@ -1293,12 +1170,7 @@ pub struct IntoKeys<S> {
 	inner: crate::btree::IntoIter<S>
 }
 
-impl<S: MapStorageMut> IntoKeys<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<S: MapStorageMut> IntoKeys<S> {
 	pub(crate) fn new(btree: S) -> Self {
 		Self {
 			inner: btree.into_iter()
@@ -1306,26 +1178,11 @@ where
 	}
 }
 
-impl<S: MapStorageMut> FusedIterator for IntoKeys<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<S: MapStorageMut> FusedIterator for IntoKeys<S> where for<'r> S::ItemRef<'r>: Read<S> {}
 
-impl<S: MapStorageMut> ExactSizeIterator for IntoKeys<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<S: MapStorageMut> ExactSizeIterator for IntoKeys<S> where for<'r> S::ItemRef<'r>: Read<S> {}
 
-impl<S: MapStorageMut> Iterator for IntoKeys<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<S: MapStorageMut> Iterator for IntoKeys<S> where for<'r> S::ItemRef<'r>: Read<S> {
 	type Item = S::Key;
 
 	#[inline]
@@ -1335,19 +1192,14 @@ where
 
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into().0)
+		self.inner.next().map(S::key)
 	}
 }
 
-impl<S: MapStorageMut> DoubleEndedIterator for IntoKeys<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<S: MapStorageMut> DoubleEndedIterator for IntoKeys<S> where for<'r> S::ItemRef<'r>: Read<S> {
 	#[inline]
 	fn next_back(&mut self) -> Option<Self::Item> {
-		self.inner.next_back().map(|item| item.into().0)
+		self.inner.next_back().map(S::key)
 	}
 }
 
@@ -1355,12 +1207,7 @@ pub struct IntoValues<S> {
 	inner: crate::btree::IntoIter<S>
 }
 
-impl<S: MapStorageMut> IntoValues<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<S: MapStorageMut> IntoValues<S> {
 	pub(crate) fn new(btree: S) -> Self {
 		Self {
 			inner: btree.into_iter()
@@ -1368,25 +1215,13 @@ where
 	}
 }
 
-impl<S: MapStorageMut> FusedIterator for IntoValues<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<S: MapStorageMut> FusedIterator for IntoValues<S> where for<'r> S::ItemRef<'r>: Read<S> {}
 
-impl<S: MapStorageMut> ExactSizeIterator for IntoValues<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<S: MapStorageMut> ExactSizeIterator for IntoValues<S> where for<'r> S::ItemRef<'r>: Read<S> {}
 
 impl<S: MapStorageMut> Iterator for IntoValues<S>
 where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+	for<'r> S::ItemRef<'r>: Read<S>
 {
 	type Item = S::Value;
 
@@ -1397,28 +1232,18 @@ where
 
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into().1)
+		self.inner.next().map(S::value)
 	}
 }
 
-impl<S: MapStorageMut> DoubleEndedIterator for IntoValues<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<S: MapStorageMut> DoubleEndedIterator for IntoValues<S> where for<'r> S::ItemRef<'r>: Read<S> {
 	#[inline]
 	fn next_back(&mut self) -> Option<Self::Item> {
-		self.inner.next_back().map(|item| item.into().1)
+		self.inner.next_back().map(S::value)
 	}
 }
 
-impl<S: MapStorageMut> IntoIterator for Map<S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)> + Read<S>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<S: MapStorageMut> IntoIterator for Map<S> where for<'r> S::ItemRef<'r>: Read<S> {
 	type IntoIter = IntoIter<S>;
 	type Item = (S::Key, S::Value);
 
@@ -1430,10 +1255,7 @@ where
 
 pub struct DrainFilter<'a, S: MapStorageMut, F>
 where
-	F: for<'f> FnMut(S::KeyRef<'f>, S::ValueMut<'f>) -> bool,
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+	F: for<'f> FnMut(S::KeyRef<'f>, S::ValueMut<'f>) -> bool
 {
 	inner: crate::btree::DrainFilterInner<'a, S>,
 	f: F
@@ -1441,10 +1263,7 @@ where
 
 impl<'a, S: MapStorageMut, F> DrainFilter<'a, S, F>
 where
-	F: for<'f> FnMut(S::KeyRef<'f>, S::ValueMut<'f>) -> bool,
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+	F: for<'f> FnMut(S::KeyRef<'f>, S::ValueMut<'f>) -> bool
 {
 	#[inline]
 	fn new(btree: &'a mut S, f: F) -> Self {
@@ -1457,10 +1276,7 @@ where
 
 impl<'a, S: MapStorageMut, F> Iterator for DrainFilter<'a, S, F>
 where
-	F: for<'f> FnMut(S::KeyRef<'f>, S::ValueMut<'f>) -> bool,
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+	F: for<'f> FnMut(S::KeyRef<'f>, S::ValueMut<'f>) -> bool
 {
 	type Item = (S::Key, S::Value);
 
@@ -1472,35 +1288,26 @@ where
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
 		let f = &mut self.f;
-		self.inner.next_consume(|item : S::ItemMut<'_>| filter::<S, F>(f, item)).map(|item| item.into())
+		self.inner.next_consume(|item : S::ItemMut<'_>| filter::<S, F>(f, item)).map(S::split)
 	}
 }
 
 fn filter<'i, S: MapStorageMut, F>(f: &mut F, item: S::ItemMut<'i>) -> bool
 where
-	F: FnMut(S::KeyRef<'i>, S::ValueMut<'i>) -> bool,
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+	F: FnMut(S::KeyRef<'i>, S::ValueMut<'i>) -> bool
 {
-	let (key, value) = item.into();
+	let (key, value) = S::split_mut(item);
 	f(key, value)
 }
 
 impl<'a, S: MapStorageMut, F> FusedIterator for DrainFilter<'a, S, F>
 where
-	F: for<'f> FnMut(S::KeyRef<'f>, S::ValueMut<'f>) -> bool,
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+	F: for<'f> FnMut(S::KeyRef<'f>, S::ValueMut<'f>) -> bool
 {}
 
 impl<'a, S: MapStorageMut, F> Drop for DrainFilter<'a, S, F>
 where
-	F: for<'f> FnMut(S::KeyRef<'f>, S::ValueMut<'f>) -> bool,
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
+	F: for<'f> FnMut(S::KeyRef<'f>, S::ValueMut<'f>) -> bool
 {
 	#[inline]
 	fn drop(&mut self) {
@@ -1512,28 +1319,20 @@ where
 	}
 }
 
-pub struct Range<'a, S: MapStorage>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+pub struct Range<'a, S: MapStorage> {
 	inner: crate::btree::Range<'a, S>
 }
 
-impl<'a, S: MapStorage> Range<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: MapStorage> Range<'a, S> {
 	#[inline]
-	fn new<T, R>(btree: &'a S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, S: ItemPartialOrd<T> {
+	fn new<T, R>(btree: &'a S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, S: KeyPartialOrd<T> {
 		Self {
 			inner: btree.range(range)
 		}
 	}
 }
 
-impl<'a, S: 'a + MapStorage> Iterator for Range<'a, S> where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: 'a + MapStorage> Iterator for Range<'a, S> {
 	type Item = (S::KeyRef<'a>, S::ValueRef<'a>);
 
 	#[inline]
@@ -1543,27 +1342,18 @@ impl<'a, S: 'a + MapStorage> Iterator for Range<'a, S> where
 
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into())
+		self.inner.next().map(S::split_ref)
 	}
 }
 
-impl<'a, S: 'a + MapStorage> FusedIterator for Range<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{}
+impl<'a, S: 'a + MapStorage> FusedIterator for Range<'a, S> {}
 
-impl<'a, S: 'a + MapStorage> ExactSizeIterator for Range<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{}
+impl<'a, S: 'a + MapStorage> ExactSizeIterator for Range<'a, S> {}
 
-impl<'a, S: 'a + MapStorage> DoubleEndedIterator for Range<'a, S>
-where
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>
-{
+impl<'a, S: 'a + MapStorage> DoubleEndedIterator for Range<'a, S> {
 	#[inline]
 	fn next_back(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into())
+		self.inner.next().map(S::split_ref)
 	}
 }
 
@@ -1571,26 +1361,16 @@ pub struct RangeMut<'a, S: StorageMut> {
 	inner: crate::btree::RangeMut<'a, S>
 }
 
-impl<'a, S: MapStorageMut> RangeMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<'a, S: MapStorageMut> RangeMut<'a, S> {
 	#[inline]
-	fn new<T, R>(btree: &'a mut S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, S: ItemPartialOrd<T> {
+	fn new<T, R>(btree: &'a mut S, range: R) -> Self where T: Ord + ?Sized, R: RangeBounds<T>, S: KeyPartialOrd<T> {
 		Self {
 			inner: btree.range_mut(range)
 		}
 	}
 }
 
-impl<'a, S: 'a + MapStorageMut> Iterator for RangeMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<'a, S: 'a + MapStorageMut> Iterator for RangeMut<'a, S> {
 	type Item = (S::KeyRef<'a>, S::ValueMut<'a>);
 
 	#[inline]
@@ -1600,32 +1380,17 @@ where
 
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into())
+		self.inner.next().map(S::split_mut)
 	}
 }
 
-impl<'a, S: 'a + MapStorageMut> FusedIterator for RangeMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<'a, S: 'a + MapStorageMut> FusedIterator for RangeMut<'a, S> {}
 
-impl<'a, S: 'a + MapStorageMut> ExactSizeIterator for RangeMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{}
+impl<'a, S: 'a + MapStorageMut> ExactSizeIterator for RangeMut<'a, S> {}
 
-impl<'a, S: 'a + MapStorageMut> DoubleEndedIterator for RangeMut<'a, S>
-where
-	S::Item: Into<(S::Key, S::Value)>,
-	for<'r> S::ItemRef<'r>: Into<(S::KeyRef<'r>, S::ValueRef<'r>)>,
-	for<'r> S::ItemMut<'r>: Into<(S::KeyRef<'r>, S::ValueMut<'r>)>
-{
+impl<'a, S: 'a + MapStorageMut> DoubleEndedIterator for RangeMut<'a, S> {
 	#[inline]
 	fn next_back(&mut self) -> Option<Self::Item> {
-		self.inner.next().map(|item| item.into())
+		self.inner.next().map(S::split_mut)
 	}
 }
