@@ -67,6 +67,24 @@ mod map {
 		}
 	}
 
+	unsafe impl<'a, K, V> crate::btree::node::item::Read<MapStorage<K, V>> for &'a Binding<K, V> {
+		unsafe fn read(&self) -> Binding<K, V> {
+			std::ptr::read(*self)
+		}
+	}
+
+	unsafe impl<'a, K, V> crate::btree::node::item::Read<MapStorage<K, V>> for &'a mut Binding<K, V> {
+		unsafe fn read(&self) -> Binding<K, V> {
+			std::ptr::read(*self)
+		}
+	}
+
+	unsafe impl<'a, K, V> crate::btree::node::item::Write<MapStorage<K, V>> for &'a mut Binding<K, V> {
+		unsafe fn write(&mut self, value: Binding<K, V>) {
+			std::ptr::write(*self, value)
+		}
+	}
+
 	impl<Q: ?Sized, K, V> KeyPartialOrd<Q> for MapStorage<K, V>
 	where
 		Q: PartialOrd,

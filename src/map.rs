@@ -588,19 +588,19 @@ impl<S: MapStorageMut> Map<S> {
 	#[inline]
 	pub fn update<T, F>(&mut self, key: S::Key, action: F) -> T
 	where
-		S: KeyPartialOrd<S::Key> + Insert<(S::Key, S::Value)>,
+		S: KeyPartialOrd<S::Key> + Insert<Inserted<S::Key, S::Value>>,
 		F: FnOnce(Option<S::Value>) -> (Option<S::Value>, T),
 		for<'r> S::ItemMut<'r>: Read<S> + Write<S>
 	{
 		self.btree.update(key, |entry| match entry {
 			UpdateEntry::Vacant(key) => {
 				let (new_value, t) = action(None);
-				(new_value.map(|value| (key, value)), t)
+				(new_value.map(|value| Inserted(key, value)), t)
 			},
 			UpdateEntry::Occupied(item) => {
 				let (key, value) = S::split(item);
 				let (new_value, t) = action(Some(value));
-				(new_value.map(|value| (key, value)), t)
+				(new_value.map(|value| Inserted(key, value)), t)
 			}
 		})
 	}

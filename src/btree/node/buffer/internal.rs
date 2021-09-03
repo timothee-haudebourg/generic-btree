@@ -28,6 +28,9 @@ pub trait Internal<S: StorageMut>: Default {
 		}
 	}
 	
+	/// Maximum capacity of the internal node.
+	/// 
+	/// This corresponds to the Knuth order of the tree.
 	fn max_capacity(&self) -> usize;
 
 	fn set_first_child(&mut self, id: usize);
