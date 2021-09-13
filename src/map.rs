@@ -48,48 +48,70 @@ pub struct Inserted<K, V>(pub K, pub V);
 /// both the key and value are updated.
 pub struct Replacing<K, V>(pub K, pub V);
 
+/// Map-like storage.
+/// 
+/// It is a more precise storage trait that
+/// adds the notion of keys and values.
 pub trait MapStorage: Storage {
+	/// Key reference.
 	type KeyRef<'a> where Self: 'a;
+
+	/// Value reference.
 	type ValueRef<'a> where Self: 'a;
 
+	/// Splits an item reference into a key reference and a value reference.
 	fn split_ref<'a>(item: Self::ItemRef<'a>) -> (Self::KeyRef<'a>, Self::ValueRef<'a>) where Self: 'a;
 
+	/// Extracts a key reference from an item reference.
 	fn key_ref<'a>(item: Self::ItemRef<'a>) -> Self::KeyRef<'a> where Self: 'a {
 		Self::split_ref(item).0
 	}
 
+	/// Extracts a value reference from an item reference.
 	fn value_ref<'a>(item: Self::ItemRef<'a>) -> Self::ValueRef<'a> where Self: 'a {
 		Self::split_ref(item).1
 	}
 }
 
+/// Mutable map-like storage.
 pub trait MapStorageMut: StorageMut + MapStorage {
+	/// Key type.
 	type Key;
+
+	/// Value type.
 	type Value;
 
+	/// Mutable value reference.
 	type ValueMut<'a> where Self: 'a;
 
+	/// Split an item into a key-value pair.
 	fn split(item: Self::Item) -> (Self::Key, Self::Value);
 
+	/// Turns an item into a key.
 	fn key(item: Self::Item) -> Self::Key {
 		Self::split(item).0
 	}
 
+	/// Turns an item into a value.
 	fn value(item: Self::Item) -> Self::Value {
 		Self::split(item).1
 	}
 
+	/// Splits a mutable item reference into a key reference and a value mutable reference.
 	fn split_mut<'a>(item: Self::ItemMut<'a>) -> (Self::KeyRef<'a>, Self::ValueMut<'a>) where Self: 'a;
 
+	/// Turns a key reference into an item mutable reference.
 	fn key_mut<'a>(item: Self::ItemMut<'a>) -> Self::KeyRef<'a> where Self: 'a {
 		Self::split_mut(item).0
 	}
 
+	/// Turns a mutable value reference into an item mutable reference.
 	fn value_mut<'a>(item: Self::ItemMut<'a>) -> Self::ValueMut<'a> where Self: 'a {
 		Self::split_mut(item).1
 	}
 }
 
+/// BTree map.
 pub struct Map<S> {
 	btree: S
 }
@@ -136,7 +158,7 @@ impl<S: MapStorage> Map<S> {
 		self.btree.len()
 	}
 
-	/// Returns the key-value pair corresponding to the supplied key.
+	/// Returns a reference to the value bound to the supplied key.
 	///
 	/// The supplied key may be any borrowed form of the map's key type, but the ordering
 	/// on the borrowed form *must* match the ordering on the key type.
@@ -173,7 +195,7 @@ impl<S: MapStorage> Map<S> {
 	/// ```
 	#[inline]
 	pub fn get_key_value<Q: ?Sized>(&self, k: &Q) -> Option<(S::KeyRef<'_>, S::ValueRef<'_>)> where S: KeyPartialOrd<Q> {
-		self.btree.get_item(k).map(S::split_ref)
+		self.btree.get(k).map(S::split_ref)
 	}
 
 	/// Returns the first key-value pair in the map.
@@ -258,10 +280,10 @@ impl<S: MapStorage> Map<S> {
 	/// use std::ops::Bound::Included;
 	///
 	/// let mut map = Map::new();
-	/// map.insert(3, "a");
+	/// map.insert(3u32, "a");
 	/// map.insert(5, "b");
 	/// map.insert(8, "c");
-	/// for (&key, &value) in map.range((Included(&4), Included(&8))) {
+	/// for (&key, &value) in map.range::<u32, _>((Included(&4), Included(&8))) {
 	///     println!("{}: {}", key, value);
 	/// }
 	/// assert_eq!(Some((&5, &"b")), map.range(4..).next());
@@ -329,7 +351,7 @@ impl<S: MapStorage> Map<S> {
 	/// assert_eq!(map.contains_key(&2), false);
 	/// ```
 	#[inline]
-	pub fn contains<Q: ?Sized>(&self, key: &Q) -> bool where S: KeyPartialOrd<Q> {
+	pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool where S: KeyPartialOrd<Q> {
 		self.btree.get(key).is_some()
 	}
 
@@ -365,7 +387,7 @@ impl<S: MapStorageMut> Map<S> {
 	/// if let Some(x) = map.get_mut(&1) {
 	///     *x = "b";
 	/// }
-	/// assert_eq!(map[&1], "b");
+	/// assert_eq!(*map.get(&1).unwrap(), "b");
 	/// ```
 	#[inline]
 	pub fn get_mut<Q>(&mut self, key: &Q) -> Option<S::ValueMut<'_>> where S: KeyPartialOrd<Q> {
@@ -412,11 +434,11 @@ impl<S: MapStorageMut> Map<S> {
 	/// assert_eq!(*map.get(&2).unwrap(), "b");
 	/// ```
 	#[inline]
-	pub fn first_entry(&mut self) -> Option<OccupiedEntry<Self>> {
+	pub fn first_entry(&mut self) -> Option<OccupiedEntry<S>> {
 		match self.btree.first_item_address() {
 			Some(addr) => {
 				Some(OccupiedEntry {
-					map: self,
+					map: &mut self.btree,
 					addr
 				})
 			},
@@ -444,23 +466,17 @@ impl<S: MapStorageMut> Map<S> {
 	/// assert_eq!(*map.get(&2).unwrap(), "last");
 	/// ```
 	#[inline]
-	pub fn last_entry(&mut self) -> Option<OccupiedEntry<Self>> {
+	pub fn last_entry(&mut self) -> Option<OccupiedEntry<S>> {
 		match self.btree.last_item_address() {
 			Some(addr) => {
 				Some(OccupiedEntry {
-					map: self,
+					map: &mut self.btree,
 					addr
 				})
 			},
 			None => None
 		}
 	}
-
-	// /// Gets a mutable iterator over the entries of the map, sorted by key, that allows insertion and deletion of the iterated entries.
-	// #[inline]
-	// fn entries_mut(&mut self) -> EntriesMut<Self> {
-	// 	EntriesMut::new(self)
-	// }
 
 	/// Insert a key-value pair in the tree.
 	#[inline]
@@ -474,12 +490,12 @@ impl<S: MapStorageMut> Map<S> {
 
 	/// Replace a key-value pair in the tree.
 	#[inline]
-	pub fn replace<'r>(&'r mut self, key: S::Key, value: S::Value) -> Option<S::Item>
+	pub fn replace<'r>(&'r mut self, key: S::Key, value: S::Value) -> Option<(S::Key, S::Value)>
 	where
 		S: Insert<Replacing<S::Key, S::Value>> + KeyPartialOrd<Replacing<S::Key, S::Value>>,
 		S::ItemMut<'r>: Replace<S, Replacing<S::Key, S::Value>, Output=S::Item>
 	{
-		self.btree.insert(Replacing(key, value))
+		self.btree.insert(Replacing(key, value)).map(S::split)
 	}
 
 	/// Removes and returns the first element in the map.
@@ -501,8 +517,8 @@ impl<S: MapStorageMut> Map<S> {
 	/// assert!(map.is_empty());
 	/// ```
 	#[inline]
-	pub fn pop_first(&mut self) -> Option<S::Item> {
-		self.btree.pop_first()
+	pub fn pop_first(&mut self) -> Option<(S::Key, S::Value)> {
+		self.btree.pop_first().map(S::split)
 	}
 
 	/// Removes and returns the last element in the map.
@@ -524,8 +540,8 @@ impl<S: MapStorageMut> Map<S> {
 	/// assert!(map.is_empty());
 	/// ```
 	#[inline]
-	pub fn pop_last(&mut self) -> Option<S::Item> {
-		self.btree.pop_last()
+	pub fn pop_last(&mut self) -> Option<(S::Key, S::Value)> {
+		self.btree.pop_last().map(S::split)
 	}
 
 	/// Removes a key from the map, returning the value at the key if the key
@@ -627,11 +643,6 @@ impl<S: MapStorageMut> Map<S> {
 	#[inline]
 	pub fn iter_mut(&mut self) -> IterMut<S> {
 		IterMut::new(&mut self.btree)
-	}
-
-	#[inline]
-	pub fn into_iter(self) -> IntoIter<S> {
-		IntoIter::new(self.btree)
 	}
 
 	/// Creates a consuming iterator visiting all the keys, in sorted order.
@@ -1249,7 +1260,7 @@ impl<S: MapStorageMut> IntoIterator for Map<S> where for<'r> S::ItemRef<'r>: Rea
 
 	#[inline]
 	fn into_iter(self) -> Self::IntoIter {
-		self.into_iter()
+		IntoIter::new(self.btree)
 	}
 }
 

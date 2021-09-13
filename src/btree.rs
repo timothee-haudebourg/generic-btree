@@ -9,7 +9,6 @@ use std::{
 
 pub mod node;
 mod iter;
-// mod entry;
 
 use node::{
 	Balance,
@@ -27,25 +26,20 @@ pub use iter::{
 	Iter,
 	IterMut,
 	IntoIter,
-	// Keys,
-	// IntoKeys,
-	// Values,
-	// IntoValues,
-	// ValuesMut,
 	Range,
 	RangeMut,
 	DrainFilter
 };
 pub(crate) use iter::DrainFilterInner;
-// pub use entry::{
-// 	Entry,
-// 	VacantEntry,
-// 	OccupiedEntry,
-// 	EntriesMut
-// };
 
+/// Updated entry.
+/// 
+/// Used by the [StorageMut::update] function.
 pub enum UpdateEntry<Q, I> {
+	/// Vacant entry, queried by the given key.
 	Vacant(Q),
+
+	/// Occupied entry, storing the given item.
 	Occupied(I)
 }
 
@@ -81,18 +75,22 @@ pub enum ValidationError {
 	UnsortedFromRight(usize),
 }
 
+/// Key-based items partial ordering function.
 pub trait KeyPartialOrd<T: ?Sized>: Storage {
 	fn key_partial_cmp<'r>(item: &Self::ItemRef<'r>, other: &T) -> Option<Ordering> where Self: 'r;
 }
 
+/// Key-based items ordering function.
 pub trait KeyOrd: Storage {
 	fn key_cmp<'r, 's>(item: &Self::ItemRef<'r>, other: &Self::ItemRef<'s>) -> Ordering where Self: 'r + 's;
 }
 
+/// Items partial ordering function.
 pub trait ItemPartialOrd<S: Storage>: Storage {
 	fn item_partial_cmp<'r, 's>(item: &Self::ItemRef<'r>, other: &S::ItemRef<'s>) -> Option<Ordering> where Self: 'r, S: 's;
 }
 
+/// Items ordering function.
 pub trait ItemOrd: Storage + ItemPartialOrd<Self> {
 	fn item_cmp<'r, 's>(item: &Self::ItemRef<'r>, other: &Self::ItemRef<'s>) -> Ordering where Self: 'r + 's;
 }
@@ -123,12 +121,9 @@ pub trait Storage: Sized {
 	}
 
 	/// Returns the node with the given id, if any.
-	fn node<'r>(&'r self, id: usize) -> Option<node::Ref<'r, Self>>;
+	fn node(&self, id: usize) -> Option<node::Ref<'_, Self>>;
 
-	/// Returns the key-value pair corresponding to the supplied key.
-	///
-	/// The supplied key may be any borrowed form of the map's key type, but the ordering
-	/// on the borrowed form *must* match the ordering on the key type.
+	/// Returns a reference to the item identified by the supplied key.
 	#[inline]
 	fn get<Q: ?Sized>(&self, key: &Q) -> Option<Self::ItemRef<'_>> where Self: KeyPartialOrd<Q> {
 		match self.root() {
@@ -137,7 +132,7 @@ pub trait Storage: Sized {
 		}
 	}
 
-	/// Get a reference to the value associated to the given `key` in the node `id`, if any.
+	/// Returns a reference to the item associated to the given `key` in the node `id`, if any.
 	#[inline]
 	fn get_in<Q: ?Sized>(&self, key: &Q, mut id: usize) -> Option<Self::ItemRef<'_>> where Self: KeyPartialOrd<Q> {
 		loop {
@@ -151,26 +146,12 @@ pub trait Storage: Sized {
 		}
 	}
 
+	/// Returns a reference to the item at the given address, if any.
 	fn item(&self, addr: Address) -> Option<Self::ItemRef<'_>> {
 		self.node(addr.id).map(|node| node.item(addr.offset)).flatten()
 	}
 
-	/// Returns the item corresponding to the supplied key.
-	///
-	/// The supplied key may be any borrowed form of the map's key type, but the ordering
-	/// on the borrowed form *must* match the ordering on the key type.
-	#[inline]
-	fn get_item<'a, Q: ?Sized>(&'a self, k: &Q) -> Option<Self::ItemRef<'a>>
-	where Self: KeyPartialOrd<Q>
-	{
-		match self.address_of(k) {
-			Ok(addr) => self.item(addr),
-			Err(_) => None
-		}
-	}
-
-	/// Returns the first key-value pair in the map.
-	/// The key in this pair is the minimum key in the map.
+	/// Returns a reference to the first item in the tree.
 	#[inline]
 	fn first_item(&self) -> Option<Self::ItemRef<'_>> {
 		match self.first_item_address() {
@@ -179,8 +160,7 @@ pub trait Storage: Sized {
 		}
 	}
 
-	/// Returns the last key-value pair in the map.
-	/// The key in this pair is the maximum key in the map.
+	/// Returns a reference to the last item in the tree.
 	///
 	/// # Examples
 	///
@@ -202,6 +182,7 @@ pub trait Storage: Sized {
 		}
 	}
 
+	/// Returns the address of the first item in the tree, if any.
 	fn first_item_address(&self) -> Option<Address> {
 		match self.root() {
 			Some(mut id) => loop {
@@ -216,6 +197,10 @@ pub trait Storage: Sized {
 		}
 	}
 
+	/// Returns the first back address in the tree.
+	/// 
+	/// A "back address" is a valid address whose offset is at least `0`.
+	/// See the [Address] for a detailed definition.
 	fn first_back_address(&self) -> Address {
 		match self.root() {
 			Some(mut id) => loop {
@@ -230,6 +215,7 @@ pub trait Storage: Sized {
 		}
 	}
 
+	/// Returns the address of the last item in the tree, if any.
 	fn last_item_address(&self) -> Option<Address> {
 		match self.root() {
 			Some(mut id) => loop {
@@ -244,6 +230,9 @@ pub trait Storage: Sized {
 		}
 	}
 
+	/// Returns the last valid address of the tree.
+	/// 
+	/// See the [Address] for a detailed definition of valid addresses.
 	fn last_valid_address(&self) -> Address {
 		match self.root() {
 			Some(mut id) => loop {
@@ -258,6 +247,7 @@ pub trait Storage: Sized {
 		}
 	}
 
+	/// Normalizes the given address into an item address.
 	fn normalize(&self, mut addr: Address) -> Option<Address> {
 		if addr.is_nowhere() {
 			None
@@ -279,6 +269,7 @@ pub trait Storage: Sized {
 		}
 	}
 
+	/// Computes an equivalent address in a leaf node.
 	#[inline]
 	fn leaf_address(&self, mut addr: Address) -> Address {
 		if !addr.is_nowhere() {
@@ -332,6 +323,7 @@ pub trait Storage: Sized {
 		}
 	}
 
+	/// Returns the previous front address.
 	#[inline]
 	fn previous_front_address(&self, mut addr: Address) -> Option<Address> {
 		if addr.is_nowhere() {
@@ -384,13 +376,11 @@ pub trait Storage: Sized {
 		}
 
 		let item_count = self.node(addr.id).unwrap().item_count();
-		if addr.offset < item_count {
-			addr.offset.incr();
-		} else if addr.offset > item_count {
-			return None
+		match addr.offset.partial_cmp(&item_count) {
+			Some(Ordering::Less) => addr.offset.incr(),
+			Some(Ordering::Greater) => return None,
+			_ => ()
 		}
-
-		// let original_addr_shifted = addr;
 
 		loop {
 			let node = self.node(addr.id).unwrap();
@@ -424,6 +414,7 @@ pub trait Storage: Sized {
 		}
 	}
 
+	/// Returns the next back address.
 	#[inline]
 	fn next_back_address(&self, mut addr: Address) -> Option<Address> {
 		if addr.is_nowhere() {
@@ -465,6 +456,7 @@ pub trait Storage: Sized {
 		Some(addr)
 	}
 
+	/// Returns the next item or back address.
 	#[inline]
 	fn next_item_or_back_address(&self, mut addr: Address) -> Option<Address> {
 		if addr.is_nowhere() {
@@ -472,10 +464,10 @@ pub trait Storage: Sized {
 		}
 
 		let item_count = self.node(addr.id).unwrap().item_count();
-		if addr.offset < item_count {
-			addr.offset.incr();
-		} else if addr.offset > item_count {
-			return None
+		match addr.offset.partial_cmp(&item_count) {
+			Some(Ordering::Less) => addr.offset.incr(),
+			Some(Ordering::Greater) => return None,
+			_ => ()
 		}
 
 		let original_addr_shifted = addr;
@@ -566,18 +558,6 @@ pub trait Storage: Sized {
 		Range::new(self, range)
 	}
 
-	// /// Gets an iterator over the keys of the map, in sorted order.
-	// #[inline]
-	// fn keys(&self) -> Keys<Self> {
-	// 	Keys::new(self)
-	// }
-
-	// /// Gets an iterator over the values of the map, in order by key.
-	// #[inline]
-	// fn values(&self) -> Values<Self> {
-	// 	Values::new(self)
-	// }
-
 	#[inline]
 	fn eq<S: Storage>(&self, other: &S) -> bool where S: ItemPartialOrd<Self> {
 		if self.len() == other.len() {
@@ -664,9 +644,8 @@ pub trait Storage: Sized {
 	#[inline]
 	fn dot_write<W: std::io::Write>(&self, f: &mut W) -> std::io::Result<()> where for<'r> Self::ItemRef<'r>: crate::dot::Display {
 		write!(f, "digraph tree {{\n\tnode [shape=record];\n")?;
-		match self.root() {
-			Some(id) => self.dot_write_node(f, id)?,
-			None => ()
+		if let Some(id) = self.root() {
+			self.dot_write_node(f, id)?
 		}
 		write!(f, "}}")
 	}
@@ -687,12 +666,12 @@ pub trait Storage: Sized {
 
 		// node.dot_write_label(f)?;
 		use crate::dot::Display;
-		write!(f, "{}({})\"];\n", node.dot(), id)?;
+		writeln!(f, "{}({})\"];", node.dot(), id)?;
 
 		for child_id in node.children() {
 			self.dot_write_node(f, child_id)?;
 			let child_name = format!("n{}", child_id);
-			write!(f, "\t{} -> {}\n", name, child_name)?;
+			writeln!(f, "\t{} -> {}", name, child_name)?;
 		}
 
 		Ok(())
@@ -700,11 +679,8 @@ pub trait Storage: Sized {
 
 	#[cfg(debug_assertions)]
 	fn validate(&self) -> Result<(), ValidationError> where Self: KeyOrd {
-		match self.root() {
-			Some(id) => {
-				self.validate_node(id, None, None, None)?;
-			},
-			None => ()
+		if let Some(id) = self.root() {
+			self.validate_node(id, None, None, None)?;
 		}
 
 		Ok(())
@@ -744,7 +720,7 @@ pub trait Storage: Sized {
 /// 
 /// # Correctness
 /// 
-/// When using a mutable reference to the key of an item of the B-Tree,
+/// When using a mutable reference to an item of the B-Tree,
 /// the user is responsible of keeping the well sortedness of the
 /// items.
 /// 
@@ -777,6 +753,7 @@ pub unsafe trait StorageMut: Storage {
 		self.set_len(self.len() - 1)
 	}
 
+	/// Allocate the given node.
 	fn allocate_node(&mut self, node: node::Buffer<Self>) -> usize;
 
 	/// Allocate the given node and setup its children parent id.
@@ -825,7 +802,7 @@ pub unsafe trait StorageMut: Storage {
 		IterMut::new(self)
 	}
 
-	/// Constructs a mutable double-ended iterator over a sub-range of elements in the map.
+	/// Constructs a mutable double-ended iterator over a sub-range of items in the tree.
 	/// The simplest way is to use the range syntax `min..max`, thus `range(min..max)` will
 	/// yield elements from min (inclusive) to max (exclusive).
 	/// The range may also be entered as `(Bound<T>, Bound<T>)`, so for example
@@ -846,31 +823,7 @@ pub unsafe trait StorageMut: Storage {
 		RangeMut::new(self, range)
 	}
 
-	// /// Gets a mutable iterator over the values of the map, in order by key.
-	// ///
-	// /// # Example
-	// ///
-	// /// ```
-	// /// use generic_btree::slab::Map;
-	// ///
-	// /// let mut a = Map::new();
-	// /// a.insert(1, String::from("hello"));
-	// /// a.insert(2, String::from("goodbye"));
-	// ///
-	// /// for value in a.values_mut() {
-	// ///     value.push_str("!");
-	// /// }
-	// ///
-	// /// let values: Vec<String> = a.values().cloned().collect();
-	// /// assert_eq!(values, [String::from("hello!"),
-	// ///                     String::from("goodbye!")]);
-	// /// ```
-	// #[inline]
-	// fn values_mut(&mut self) -> ValuesMut<Self> {
-	// 	ValuesMut::new(self)
-	// }
-
-	/// Insert a key-value pair in the tree.
+	/// Insert an item in the tree.
 	#[inline]
 	fn insert<'a, T>(&'a mut self, item: T) -> Option<<Self::ItemMut<'a> as Replace<Self, T>>::Output>
 	where
@@ -905,38 +858,21 @@ pub unsafe trait StorageMut: Storage {
 			} else {
 				panic!("invalid item address")
 			}
+		} else if self.is_empty() {
+			panic!("invalid item address")
 		} else {
-			if self.is_empty() {
-				panic!("invalid item address")
-			} else {
-				self.node_mut(addr.id).unwrap().insert(addr.offset, item, opt_right_id);
-				let new_addr = self.rebalance(addr.id, addr);
-				self.incr_len();
-				new_addr
-			}
+			self.node_mut(addr.id).unwrap().insert(addr.offset, item, opt_right_id);
+			let new_addr = self.rebalance(addr.id, addr);
+			self.incr_len();
+			new_addr
 		}
 	}
-
-	// /// Replace a key-value pair in the tree.
-	// #[inline]
-	// fn replace(&mut self, item: Self::Item) -> Option<Item<Self::Key, Self::Value>> where Self::Key: Ord {
-	// 	match self.address_of(&key) {
-	// 		Ok(addr) => {
-	// 			Some(self.replace_at(addr, key, value))
-	// 		},
-	// 		Err(addr) => {
-	// 			self.insert_exactly_at(addr, Item::new(key, value), None);
-	// 			None
-	// 		}
-	// 	}
-	// }
 
 	fn replace_at<'a, T>(&'a mut self, addr: Address, item: T) -> <Self::ItemMut<'a> as Replace<Self, T>>::Output where Self::ItemMut<'a>: Replace<Self, T> {
 		self.node_mut(addr.id).unwrap().into_item_mut(addr.offset).unwrap().replace(item)
 	}
 
-	/// Removes and returns the first element in the map.
-	/// The key of this element is the minimum key that was in the map.
+	/// Removes and returns the item from the tree.
 	///
 	/// # Example
 	///
@@ -955,14 +891,10 @@ pub unsafe trait StorageMut: Storage {
 	/// ```
 	#[inline]
 	fn pop_first(&mut self) -> Option<Self::Item> {
-		match self.first_item_address() {
-			Some(addr) => Some(self.remove_at(addr).unwrap().0),
-			None => None
-		}
+		self.first_item_address().map(|addr| self.remove_at(addr).unwrap().0)
 	}
 
-	/// Removes and returns the last element in the map.
-	/// The key of this element is the maximum key that was in the map.
+	/// Removes and returns the last item from the tree.
 	///
 	/// # Example
 	///
@@ -981,17 +913,10 @@ pub unsafe trait StorageMut: Storage {
 	/// ```
 	#[inline]
 	fn pop_last(&mut self) -> Option<Self::Item> {
-		match self.last_item_address() {
-			Some(addr) => Some(self.remove_at(addr).unwrap().0),
-			None => None
-		}
+		self.last_item_address().map(|addr| self.remove_at(addr).unwrap().0)
 	}
 
-	/// Removes a key from the map, returning the value at the key if the key
-	/// was previously in the map.
-	///
-	/// The key may be any borrowed form of the map's key type, but the ordering
-	/// on the borrowed form *must* match the ordering on the key type.
+	/// Removes the item identified by the given key in the tree.
 	///
 	/// # Example
 	///
@@ -1046,36 +971,7 @@ pub unsafe trait StorageMut: Storage {
 		}
 	}
 
-	/// Removes a key from the map, returning the stored key and value if the key
-	/// was previously in the map.
-	///
-	/// The key may be any borrowed form of the map's key type, but the ordering
-	/// on the borrowed form *must* match the ordering on the key type.
-	///
-	/// # Example
-	///
-	/// Basic usage:
-	///
-	/// ```
-	/// use generic_btree::slab::Map;
-	///
-	/// let mut map = Map::new();
-	/// map.insert(1, "a");
-	/// assert_eq!(map.remove_entry(&1), Some((1, "a")));
-	/// assert_eq!(map.remove_entry(&1), None);
-	/// ```
-	#[inline]
-	fn remove_entry<Q: ?Sized>(&mut self, key: &Q) -> Option<Self::Item> where Self: KeyPartialOrd<Q> {
-		match self.address_of(key) {
-			Ok(addr) => {
-				let (item, _) = self.remove_at(addr).unwrap();
-				Some(item)
-			},
-			Err(_) => None
-		}
-	}
-
-	/// Removes and returns the binding in the map, if any, of which key matches the given one.
+	/// Removes and returns the item matching the given key in the tree, if any.
 	#[inline]
 	fn take<Q: ?Sized>(&mut self, key: &Q) -> Option<Self::Item> where Self: KeyPartialOrd<Q> {
 		match self.address_of(key) {
@@ -1089,15 +985,15 @@ pub unsafe trait StorageMut: Storage {
 
 	/// General-purpose update function.
 	///
-	/// This can be used to insert, compare, replace or remove the value associated to the given
+	/// This can be used to insert, compare, replace or remove the value identified by the given
 	/// `key` in the tree.
 	/// The action to perform is specified by the `action` function.
 	/// This function is called once with:
-	///  - `Some(value)` when `value` is aready associated to `key` or
-	///  - `None` when the `key` is not associated to any value.
+	///  - `UpdateEntry::Occupied(item)` when `item` is already identified by `key` or
+	///  - `UpdateEntry::Vacant(key)` when the `key` is not associated to any value.
 	///
-	/// The `action` function must return a pair (`new_value`, `result`) where
-	/// `new_value` is the new value to be associated to `key`
+	/// The `action` function must return a pair (`new_item`, `result`) where
+	/// `new_item` is the item to be associated to `key`
 	/// (if it is `None` any previous binding is removed) and
 	/// `result` is the value returned by the entire `update` function call.
 	#[inline]
@@ -1196,32 +1092,30 @@ pub unsafe trait StorageMut: Storage {
 		// item has been moved, it must not be dropped again.
 		std::mem::forget(item);
 
-		return result
+		result
 	}
 
-	/// Creates an iterator which uses a closure to determine if an element should be removed.
+	/// Creates an iterator which uses a closure to determine if an item should be removed.
 	///
-	/// If the closure returns true, the element is removed from the map and yielded.
-	/// If the closure returns false, or panics, the element remains in the map and will not be
+	/// If the closure returns true, the item is removed from the map and yielded.
+	/// If the closure returns false, or panics, the item remains in the map and will not be
 	/// yielded.
 	///
 	/// Note that `drain_filter` lets you mutate every value in the filter closure, regardless of
 	/// whether you choose to keep or remove it.
 	///
 	/// If the iterator is only partially consumed or not consumed at all, each of the remaining
-	/// elements will still be subjected to the closure and removed and dropped if it returns true.
+	/// items will still be subjected to the closure and removed and dropped if it returns true.
 	///
-	/// It is unspecified how many more elements will be subjected to the closure
-	/// if a panic occurs in the closure, or a panic occurs while dropping an element,
+	/// It is unspecified how many more items will be subjected to the closure
+	/// if a panic occurs in the closure, or a panic occurs while dropping an item,
 	/// or if the `DrainFilter` value is leaked.
 	#[inline]
 	fn drain_filter<F>(&mut self, pred: F) -> DrainFilter<Self, F> where F: FnMut(Self::ItemMut<'_>) -> bool {
 		DrainFilter::new(self, pred)
 	}
 
-	/// Retains only the elements specified by the predicate.
-	///
-	/// In other words, remove all pairs `(k, v)` such that `f(&k, &mut v)` returns `false`.
+	/// Retains only the items specified by the predicate.
 	#[inline]
 	fn retain<F>(&mut self, mut f: F)
 	where
@@ -1259,18 +1153,16 @@ pub unsafe trait StorageMut: Storage {
 
 							// new address.
 							if addr.id == id {
-								if addr.offset == median_offset {
-									addr = Address { id: parent_id, offset }
-								} else if addr.offset > median_offset {
-									addr = Address {
+								match addr.offset.partial_cmp(&median_offset) {
+									Some(Ordering::Equal) => addr = Address { id: parent_id, offset },
+									Some(Ordering::Greater) => addr = Address {
 										id: right_id,
 										offset: (addr.offset.unwrap() - median_offset - 1).into()
-									}
+									},
+									_ => ()
 								}
-							} else if addr.id == parent_id {
-								if addr.offset >= offset {
-									addr.offset.incr()
-								}
+							} else if addr.id == parent_id && addr.offset >= offset {
+								addr.offset.incr()
 							}
 
 							id = parent_id;
@@ -1287,13 +1179,13 @@ pub unsafe trait StorageMut: Storage {
 
 							// new address.
 							if addr.id == id {
-								if addr.offset == median_offset {
-									addr = Address { id: root_id, offset: 0.into() }
-								} else if addr.offset > median_offset {
-									addr = Address {
+								match addr.offset.partial_cmp(&median_offset) {
+									Some(Ordering::Equal) => addr = Address { id: root_id, offset: 0.into() },
+									Some(Ordering::Greater) => addr = Address {
 										id: right_id,
 										offset: (addr.offset.unwrap() - median_offset - 1).into()
-									}
+									},
+									_ => ()
 								}
 							}
 
@@ -1489,11 +1381,13 @@ pub unsafe trait StorageMut: Storage {
 
 		// update addr.
 		if addr.id == id {
-			if addr.offset == offset {
-				addr.id = left_id;
-				addr.offset = left_offset;
-			} else if addr.offset > offset {
-				addr.offset.decr();
+			match addr.offset.partial_cmp(&offset) {
+				Some(Ordering::Equal) => {
+					addr.id = left_id;
+					addr.offset = left_offset;
+				}
+				Some(Ordering::Greater) => addr.offset.decr(),
+				_ => ()
 			}
 		} else if addr.id == right_id {
 			addr.id = left_id;
@@ -1503,7 +1397,7 @@ pub unsafe trait StorageMut: Storage {
 		(balance, addr)
 	}
 
-	/// Remove every entry from the map.
+	/// Remove every item from the map.
 	fn clear(&mut self) {
 		if let Some(id) = self.root() {
 			self.clear_node(id)
@@ -1520,7 +1414,7 @@ pub unsafe trait StorageMut: Storage {
 		}
 	}
 
-	/// Remove every entry from the map without dropping the items.
+	/// Remove every item from the map without dropping the items.
 	fn forget_all(&mut self) {
 		if let Some(id) = self.root() {
 			self.forget_node(id)
@@ -1566,28 +1460,11 @@ pub unsafe trait StorageMut: Storage {
 	fn into_iter(self) -> IntoIter<Self> {
 		IntoIter::new(self)
 	}
-
-	// /// Creates a consuming iterator visiting all the keys, in sorted order.
-	// /// The map cannot be used after calling this.
-	// /// The iterator element type is `Self::Key`.
-	// #[inline]
-	// fn into_keys(self) -> IntoKeys<Self> {
-	// 	IntoKeys::new(self)
-	// }
-
-	// /// Creates a consuming iterator visiting all the values, in order by key.
-	// /// The map cannot be used after calling this.
-	// /// The iterator element type is `Self::Value`.
-	// #[inline]
-	// fn into_values(self) -> IntoValues<Self> {
-	// 	IntoValues::new(self)
-	// }
 }
 
-pub unsafe trait DerefStorage: Storage where for<'r> Self::ItemRef<'r>: std::ops::Deref<Target=Self::Target> {
-	type Target;
-}
-
+/// Storage in which items of type `T` can be inserted.
 pub trait Insert<T>: StorageMut {
+	/// Converts an item of type `T` into an item of type `Self::Item`
+	/// that is suited to be inserted in a node.
 	fn allocate_item(&mut self, item: T) -> Self::Item;
 }

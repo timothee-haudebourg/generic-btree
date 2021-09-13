@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 use super::{
 	Storage,
 	StorageMut,
-	ItemOrd,
 	KeyPartialOrd,
 	KeyOrd,
 	ValidationError
@@ -45,17 +44,11 @@ pub struct WouldUnderflow;
 
 impl Type {
 	pub fn is_internal(&self) -> bool {
-		match self {
-			Self::Internal => true,
-			_ => false
-		}
+		matches!(self, Self::Internal)
 	}
 
 	pub fn is_leaf(&self) -> bool {
-		match self {
-			Self::Leaf => true,
-			_ => false
-		}
+		matches!(self, Self::Leaf)
 	}
 }
 
@@ -68,6 +61,9 @@ pub struct Reference<S, L, I> {
 	desc: Desc<L, I>,
 	storage: PhantomData<S>
 }
+
+/// Lower and upper bounds returned by the [Reference::validate] function.
+pub type ValidationBounds<'a, S> = (Option<<S as Storage>::ItemRef<'a>>, Option<<S as Storage>::ItemRef<'a>>);
 
 impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> Reference<S, L, I> {
 	#[inline]
@@ -251,7 +247,7 @@ impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> Reference<S, L, I> {
 	}
 
 	#[cfg(debug_assertions)]
-	pub fn validate<'a>(&self, id: usize, parent: Option<usize>, min: Option<S::ItemRef<'a>>, max: Option<S::ItemRef<'a>>) -> Result<(Option<S::ItemRef<'a>>, Option<S::ItemRef<'a>>), ValidationError> where S: KeyOrd {
+	pub fn validate<'a>(&self, id: usize, parent: Option<usize>, min: Option<S::ItemRef<'a>>, max: Option<S::ItemRef<'a>>) -> Result<ValidationBounds<'a, S>, ValidationError> where S: KeyOrd {
 		if self.parent() != parent {
 			return Err(ValidationError::WrongParent(id, self.parent(), parent))
 		}
@@ -273,7 +269,7 @@ impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> Reference<S, L, I> {
 
 		if let Some(min) = &min {
 			if let Some(item) = self.borrow_first_item() {
-				if S::key_cmp(&min, &item).is_ge() {
+				if S::key_cmp(min, &item).is_ge() {
 					return Err(ValidationError::UnsortedFromLeft(id))
 				}
 			}
@@ -281,7 +277,7 @@ impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> Reference<S, L, I> {
 
 		if let Some(max) = &max {
 			if let Some(item) = self.borrow_last_item() {
-				if S::key_cmp(&max, &item).is_le() {
+				if S::key_cmp(max, &item).is_le() {
 					return Err(ValidationError::UnsortedFromRight(id))
 				}
 			}
@@ -373,9 +369,9 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	/// 
 	/// This function panics if the node is a leeaf node and `child_id` is not `None`,
 	/// or if the node is an internal node and `child_id` is `None`.
-	pub fn set_first_child(&mut self, child_id: Option<usize>) {
+	pub fn set_first_child_id(&mut self, child_id: Option<usize>) {
 		match (&mut self.desc, child_id) {
-			(Desc::Internal(node), Some(child_id)) => node.set_first_child(child_id),
+			(Desc::Internal(node), Some(child_id)) => node.set_first_child_id(child_id),
 			(Desc::Internal(_), None) => panic!("first child of internal node cannot be `None`."),
 			(Desc::Leaf(_), None) => (),
 			(Desc::Leaf(_), Some(_)) => panic!("cannot set first child of a leaf node.")
@@ -468,7 +464,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	#[inline]
 	pub fn push_left(&mut self, child_id: Option<usize>, item: S::Item) {
 		self.insert(0.into(), item, self.first_child_id());
-		self.set_first_child(child_id);
+		self.set_first_child_id(child_id);
 	}
 
 	/// Remove the first item of the node unless it would undeflow.
@@ -479,7 +475,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 		} else {
 			let first_child_id = self.first_child_id();
 			let (item, child_id) = self.remove(0.into());
-			self.set_first_child(child_id);
+			self.set_first_child_id(child_id);
 			Ok((first_child_id, item))
 		}
 	}

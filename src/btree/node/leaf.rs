@@ -20,9 +20,9 @@ pub trait LeafRef<S: Storage>: ItemAccess<S> {
 		match binary_search_min(self, key) {
 			Some((i, eq)) => {
 				if eq {
-					Ok(i.into())
+					Ok(i)
 				} else {
-					Err((i+1).into())
+					Err(i+1)
 				}
 			},
 			None => Err(0.into())
@@ -110,6 +110,9 @@ pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<S> {
 		self.item_mut(offset).unwrap().replace(item)
 	}
 
+	/// Appends the separator and all the items of `other` to this node.
+	/// 
+	/// Returns the offset of the separator.
 	fn append(&mut self, separator: S::Item, other: S::LeafNode) -> Offset;
 
 	#[inline]

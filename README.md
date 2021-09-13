@@ -12,7 +12,25 @@ so the first step in creating your own BTree data structure is to implement the
 
 ```rust
 impl generic_btree::Storage for MyBTree {
-	type NodeRef<'r> where Self: 'r = MyNodeRef<'r>; // type of reference to a BTree node.
-	type ItemRef<'r> where Self: 'r = MyItemRef<'r>; // type of reference to an item in a BTree node.
+	// type of reference to an item in a BTree node.
+	type ItemRef<'r> where Self: 'r = MyItemRef<'r>;
+
+	// type of reference to a BTree leaf node.
+	type LeafRef<'r> where Self: 'r = MyLeafRef<'r>;
+
+	// type of reference to an internal BTree node.
+	type InternalRef<'r> where Self: 'r = MyInternalRef<'r>;
+
+	fn root(&self) -> Option<usize> {
+		self.root
+	}
+
+	fn len(&self) -> usize {
+		self.len
+	}
+
+	fn node(&self, id: usize) -> Option<btree::node::Ref<'_, Self>> {
+		...
+	}
 }
 ```

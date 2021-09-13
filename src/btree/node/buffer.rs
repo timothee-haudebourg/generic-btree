@@ -1,7 +1,4 @@
-use super::{
-	StorageMut,
-	Offset
-};
+use super::StorageMut;
 
 mod internal;
 mod leaf;
@@ -25,7 +22,7 @@ impl<S: StorageMut> Buffer<S> {
 	pub fn binary(parent: Option<usize>, left_child: usize, item: S::Item, right_child: usize) -> Self {
 		let mut node = S::InternalNode::default();
 		node.set_parent(parent);
-		node.set_first_child(left_child);
+		node.set_first_child_id(left_child);
 		node.push_right(item, right_child);
 		Self::Internal(node)
 	}

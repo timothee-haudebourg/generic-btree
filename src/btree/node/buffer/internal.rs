@@ -1,8 +1,5 @@
 use std::marker::PhantomData;
-use super::{
-	StorageMut,
-	Offset
-};
+use super::StorageMut;
 
 /// Internal node buffer.
 pub trait Internal<S: StorageMut>: Default {
@@ -12,13 +9,19 @@ pub trait Internal<S: StorageMut>: Default {
 
 	fn item_count(&self) -> usize;
 
-	fn item<'r>(&'r self, offset: Offset) -> Option<S::ItemRef<'r>> where S: 'r;
+	// fn item<'r>(&'r self, offset: Offset) -> Option<S::ItemRef<'r>> where S: 'r;
 
 	fn child_count(&self) -> usize {
 		self.item_count() + 1usize
 	}
 
 	fn child_id(&self, index: usize) -> Option<usize>;
+
+	fn first_child_id(&self) -> usize {
+		self.child_id(0).unwrap()
+	}
+
+	fn set_first_child_id(&mut self, id: usize);
 
 	fn children(&self) -> Children<S, Self> {
 		Children {
@@ -32,8 +35,6 @@ pub trait Internal<S: StorageMut>: Default {
 	/// 
 	/// This corresponds to the Knuth order of the tree.
 	fn max_capacity(&self) -> usize;
-
-	fn set_first_child(&mut self, id: usize);
 
 	fn push_right(&mut self, item: S::Item, child: usize);
 

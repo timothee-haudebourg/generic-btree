@@ -142,7 +142,7 @@ pub trait InternalConst<'a, S: 'a + Storage>: InternalRef<S> {
 pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<S> {
 	fn set_parent(&mut self, parent: Option<usize>);
 
-	fn set_first_child(&mut self, id: usize);
+	fn set_first_child_id(&mut self, id: usize);
 
 	/// Returns a mutable reference to the item with the given offset in the node.
 	fn into_item_mut(self, offset: Offset) -> Option<S::ItemMut<'a>>;
@@ -153,6 +153,9 @@ pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<S> {
 
 	fn replace(&mut self, offset: Offset, item: S::Item) -> S::Item;
 
+	/// Appends the separator and all the branches of `other` into this node.
+	/// 
+	/// Returns the offset of the separator.
 	fn append(&mut self, separator: S::Item, other: S::InternalNode) -> Offset;
 
 	#[inline]
@@ -193,7 +196,7 @@ pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<S> {
 
 		// Remove the median pivot.
 		let (median_item, median_right_child) = self.remove(median_i.into());
-		right_node.set_first_child(median_right_child);
+		right_node.set_first_child_id(median_right_child);
 
 		// Move the right branches to the other node.
 		for (item, child_id) in right_branches.into_iter().rev() {

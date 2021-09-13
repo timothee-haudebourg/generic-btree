@@ -1,5 +1,4 @@
 use smallvec::SmallVec;
-use std::borrow::Borrow;
 use crate::{
 	btree::{
 		self,
@@ -66,7 +65,7 @@ impl<T> Internal<T> {
 		M
 	}
 
-	fn set_first_child(&mut self, id: usize) {
+	fn set_first_child_id(&mut self, id: usize) {
 		self.first_child_id = id;
 	}
 
@@ -91,9 +90,9 @@ impl<'s, T, S: cc_traits::SlabMut<Node<T>>> btree::node::buffer::Internal<Storag
 		self.item_count()
 	}
 
-	fn item<'a>(&'a self, offset: Offset) -> Option<&'a T> where Storage<T, S>: 'a {
-		self.item(offset)
-	}
+	// fn item<'a>(&'a self, offset: Offset) -> Option<&'a T> where Storage<T, S>: 'a {
+	// 	self.item(offset)
+	// }
 
 	fn child_id(&self, index: usize) -> Option<usize> {
 		self.child_id(index)
@@ -103,8 +102,8 @@ impl<'s, T, S: cc_traits::SlabMut<Node<T>>> btree::node::buffer::Internal<Storag
 		self.max_capacity()
 	}
 
-	fn set_first_child(&mut self, id: usize) {
-		self.set_first_child(id)
+	fn set_first_child_id(&mut self, id: usize) {
+		self.set_first_child_id(id)
 	}
 
 	fn push_right(&mut self, item: T, child: usize) {
@@ -197,8 +196,8 @@ impl<'r, T, S: 'r + cc_traits::SlabMut<Node<T>>> btree::node::InternalMut<'r, St
 		(*self).set_parent(parent)
 	}
 
-	fn set_first_child(&mut self, id: usize) {
-		(*self).set_first_child(id)
+	fn set_first_child_id(&mut self, id: usize) {
+		(*self).set_first_child_id(id)
 	}
 
 	/// Returns a mutable reference to the item with the given offset in the node.

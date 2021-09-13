@@ -7,7 +7,11 @@ use crate::btree::{
 	node::item::Replace,
 	Insert,
 };
-use super::MapStorageMut;
+use super::{
+	MapStorage,
+	MapStorageMut,
+	Inserted
+};
 
 /// A view into a single entry in a map, which may either be vacant or occupied.
 ///
@@ -102,10 +106,10 @@ impl<'a, S: MapStorageMut> Entry<'a, S> {
 	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
 	///
-	/// assert_eq!(map["poneyland"], 12);
+	/// assert_eq!(*map.get("poneyland").unwrap(), 12);
 	/// ```
 	#[inline]
-	pub fn or_insert(self, default: S::Value) -> S::ValueMut<'a> where S: Insert<(S::Key, S::Value)> {
+	pub fn or_insert(self, default: S::Value) -> S::ValueMut<'a> where S: Insert<Inserted<S::Key, S::Value>> {
 		match self {
 			Occupied(entry) => entry.into_mut(),
 			Vacant(entry) => entry.insert(default),
@@ -125,10 +129,10 @@ impl<'a, S: MapStorageMut> Entry<'a, S> {
 	///
 	/// map.entry("poneyland").or_insert_with(|| s);
 	///
-	/// assert_eq!(map["poneyland"], "hoho".to_string());
+	/// assert_eq!(*map.get("poneyland").unwrap(), "hoho".to_string());
 	/// ```
 	#[inline]
-	pub fn or_insert_with<F: FnOnce() -> S::Value>(self, default: F) -> S::ValueMut<'a> where S: Insert<(S::Key, S::Value)> {
+	pub fn or_insert_with<F: FnOnce() -> S::Value>(self, default: F) -> S::ValueMut<'a> where S: Insert<Inserted<S::Key, S::Value>> {
 		match self {
 			Occupied(entry) => entry.into_mut(),
 			Vacant(entry) => entry.insert(default()),
@@ -149,10 +153,10 @@ impl<'a, S: MapStorageMut> Entry<'a, S> {
 	///
 	/// map.entry("poneyland").or_insert_with_key(|key| key.chars().count());
 	///
-	/// assert_eq!(map["poneyland"], 9);
+	/// assert_eq!(*map.get("poneyland").unwrap(), 9);
 	/// ```
 	#[inline]
-	pub fn or_insert_with_key<F: FnOnce(&S::Key) -> S::Value>(self, default: F) -> S::ValueMut<'a> where S: Insert<(S::Key, S::Value)> {
+	pub fn or_insert_with_key<F: FnOnce(&S::Key) -> S::Value>(self, default: F) -> S::ValueMut<'a> where S: Insert<Inserted<S::Key, S::Value>> {
 		match self {
 			Occupied(entry) => entry.into_mut(),
 			Vacant(entry) => {
@@ -175,12 +179,12 @@ impl<'a, S: MapStorageMut> Entry<'a, S> {
 	/// map.entry("poneyland")
 	///    .and_modify(|e| { *e += 1 })
 	///    .or_insert(42);
-	/// assert_eq!(map["poneyland"], 42);
+	/// assert_eq!(*map.get("poneyland").unwrap(), 42);
 	///
 	/// map.entry("poneyland")
 	///    .and_modify(|e| { *e += 1 })
 	///    .or_insert(42);
-	/// assert_eq!(map["poneyland"], 43);
+	/// assert_eq!(*map.get("poneyland").unwrap(), 43);
 	/// ```
 	#[inline]
 	pub fn and_modify<F>(self, f: F) -> Self where F: FnOnce(S::ValueMut<'_>) {
@@ -204,10 +208,10 @@ impl<'a, S: MapStorageMut> Entry<'a, S> {
 	/// let mut map: Map<&str, Option<usize>> = Map::new();
 	/// map.entry("poneyland").or_default();
 	///
-	/// assert_eq!(map["poneyland"], None);
+	/// assert_eq!(*map.get("poneyland").unwrap(), None);
 	/// ```
 	#[inline]
-	pub fn or_default(self) -> S::ValueMut<'a> where S::Value: Default, S: Insert<(S::Key, S::Value)> {
+	pub fn or_default(self) -> S::ValueMut<'a> where S::Value: Default, S: Insert<Inserted<S::Key, S::Value>> {
 		match self {
 			Occupied(entry) => entry.into_mut(),
 			Vacant(entry) => entry.insert(Default::default()),
@@ -264,7 +268,7 @@ impl<'a, S: MapStorageMut> VacantEntry<'a, S> {
 	/// ## Example
 	/// ```
 	/// use generic_btree::slab::Map;
-	/// use generic_btree::btree::Entry;
+	/// use generic_btree::map::Entry;
 	///
 	/// let mut map: Map<&str, usize> = Map::new();
 	///
@@ -280,7 +284,7 @@ impl<'a, S: MapStorageMut> VacantEntry<'a, S> {
 
 impl<'a, S: MapStorageMut> VacantEntry<'a, S>
 where
-	S: Insert<(S::Key, S::Value)>
+	S: Insert<Inserted<S::Key, S::Value>>
 {
 	/// Sets the value of the entry with the `VacantEntry`'s key,
 	/// and returns a mutable reference to it.
@@ -288,18 +292,18 @@ where
 	/// ## Example
 	/// ```
 	/// use generic_btree::slab::Map;
-	/// use generic_btree::btree::Entry;
+	/// use generic_btree::map::Entry;
 	///
 	/// let mut map: Map<&str, u32> = Map::new();
 	///
 	/// if let Entry::Vacant(o) = map.entry("poneyland") {
 	///     o.insert(37);
 	/// }
-	/// assert_eq!(map["poneyland"], 37);
+	/// assert_eq!(*map.get("poneyland").unwrap(), 37);
 	/// ```
 	#[inline]
 	pub fn insert(self, value: S::Value) -> S::ValueMut<'a>  {
-		let addr = self.map.insert_at(self.addr, (self.key, value));
+		let addr = self.map.insert_at(self.addr, Inserted(self.key, value));
 		S::value_mut(self.map.item_mut(addr).unwrap())
 	}
 }
@@ -321,7 +325,7 @@ pub struct OccupiedEntry<'a, S> {
 	pub(crate) addr: Address
 }
 
-impl<'a, S: MapStorageMut> OccupiedEntry<'a, S> {
+impl<'a, S: MapStorage> OccupiedEntry<'a, S> {
 	/// Gets the address of the occupied entry in the B-Tree.
 	#[inline]
 	pub fn address(&self) -> Address {
@@ -333,7 +337,7 @@ impl<'a, S: MapStorageMut> OccupiedEntry<'a, S> {
 	/// # Example
 	/// ```
 	/// use generic_btree::slab::Map;
-	/// use generic_btree::btree::Entry;
+	/// use generic_btree::map::Entry;
 	///
 	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
@@ -372,12 +376,12 @@ impl<'a, S: MapStorageMut> OccupiedEntry<'a, S> {
 	/// # Example
 	/// ```
 	/// use generic_btree::slab::Map;
-	/// use generic_btree::btree::Entry;
+	/// use generic_btree::map::Entry;
 	///
 	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
 	///
-	/// assert_eq!(map["poneyland"], 12);
+	/// assert_eq!(*map.get("poneyland").unwrap(), 12);
 	/// if let Entry::Occupied(mut o) = map.entry("poneyland") {
 	///     *o.get_mut() += 10;
 	///     assert_eq!(*o.get(), 22);
@@ -385,7 +389,7 @@ impl<'a, S: MapStorageMut> OccupiedEntry<'a, S> {
 	///     // We can use the same Entry multiple times.
 	///     *o.get_mut() += 2;
 	/// }
-	/// assert_eq!(map["poneyland"], 24);
+	/// assert_eq!(*map.get("poneyland").unwrap(), 24);
 	/// ```
 	#[inline]
 	pub fn get_mut(&mut self) -> S::ValueMut<'_> {
@@ -398,7 +402,7 @@ impl<'a, S: MapStorageMut> OccupiedEntry<'a, S> {
 	/// # Example
 	/// ```
 	/// use generic_btree::slab::Map;
-	/// use generic_btree::btree::Entry;
+	/// use generic_btree::map::Entry;
 	///
 	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
@@ -406,10 +410,10 @@ impl<'a, S: MapStorageMut> OccupiedEntry<'a, S> {
 	/// if let Entry::Occupied(mut o) = map.entry("poneyland") {
 	///     assert_eq!(o.insert(15), 12);
 	/// }
-	/// assert_eq!(map["poneyland"], 15);
+	/// assert_eq!(*map.get("poneyland").unwrap(), 15);
 	/// ```
 	#[inline]
-	pub fn insert<'r, V>(&'r mut self, value: V) -> <S::ItemMut<'r> as Replace<S, V>>::Output where S::ItemMut<'r>: Replace<S, V> {
+	pub fn insert<'r>(&'r mut self, value: S::Value) -> <S::ItemMut<'r> as Replace<S, S::Value>>::Output where S::ItemMut<'r>: Replace<S, S::Value> {
 		self.map.item_mut(self.addr).unwrap().replace(value)
 	}
 
@@ -423,16 +427,16 @@ impl<'a, S: MapStorageMut> OccupiedEntry<'a, S> {
 	///
 	/// ```
 	/// use generic_btree::slab::Map;
-	/// use generic_btree::btree::Entry;
+	/// use generic_btree::map::Entry;
 	///
 	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
 	///
-	/// assert_eq!(map["poneyland"], 12);
+	/// assert_eq!(*map.get("poneyland").unwrap(), 12);
 	/// if let Entry::Occupied(o) = map.entry("poneyland") {
 	///     *o.into_mut() += 10;
 	/// }
-	/// assert_eq!(map["poneyland"], 22);
+	/// assert_eq!(*map.get("poneyland").unwrap(), 22);
 	/// ```
 	#[inline]
 	pub fn into_mut(self) -> S::ValueMut<'a> {
@@ -445,7 +449,7 @@ impl<'a, S: MapStorageMut> OccupiedEntry<'a, S> {
 	///
 	/// ```
 	/// use generic_btree::slab::Map;
-	/// use generic_btree::btree::Entry;
+	/// use generic_btree::map::Entry;
 	///
 	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
@@ -454,11 +458,11 @@ impl<'a, S: MapStorageMut> OccupiedEntry<'a, S> {
 	///     assert_eq!(o.remove(), 12);
 	/// }
 	/// // If we try to get "poneyland"'s value, it'll panic:
-	/// // println!("{}", map["poneyland"]);
+	/// // println!("{}", *map.get("poneyland").unwrap());
 	/// ```
 	#[inline]
-    pub fn remove(self) -> S::Value where S::Item: Into<S::Value> {
-		self.map.remove_at(self.addr).unwrap().0.into()
+    pub fn remove(self) -> S::Value {
+		S::value(self.map.remove_at(self.addr).unwrap().0)
 	}
 
 	/// Take ownership of the key and value from the map.
@@ -466,7 +470,7 @@ impl<'a, S: MapStorageMut> OccupiedEntry<'a, S> {
 	/// # Example
 	/// ```
 	/// use generic_btree::slab::Map;
-	/// use generic_btree::btree::Entry;
+	/// use generic_btree::map::Entry;
 	///
 	/// let mut map: Map<&str, usize> = Map::new();
 	/// map.entry("poneyland").or_insert(12);
@@ -477,7 +481,7 @@ impl<'a, S: MapStorageMut> OccupiedEntry<'a, S> {
 	/// }
 	///
 	/// // If now try to get the value, it will panic:
-	/// // println!("{}", map["poneyland"]);
+	/// // println!("{}", *map.get("poneyland").unwrap());
 	/// ```
 	#[inline]
 	pub fn remove_entry(self) -> S::Item {
@@ -507,7 +511,7 @@ pub struct EntriesMut<'a, S> {
 	len: usize
 }
 
-impl<'a, S: MapStorageMut> EntriesMut<'a, S> {
+impl<'a, S: MapStorage> EntriesMut<'a, S> {
 	/// Create a new iterator over all the items of the map.
 	#[inline]
 	pub(crate) fn new(btree: &'a mut S) -> EntriesMut<'a, S> {
@@ -566,8 +570,8 @@ impl<'a, S: MapStorageMut> EntriesMut<'a, S> {
 	/// If this rule is not respected, the data structure will become unusable
 	/// (invalidate the specification of every method of the API).
 	#[inline]
-	pub fn insert(&mut self, key: S::Key, value: S::Value) where S: Insert<(S::Key, S::Value)> {
-		let addr = self.btree.insert_at(self.addr, (key, value));
+	pub fn insert(&mut self, key: S::Key, value: S::Value) where S: Insert<Inserted<S::Key, S::Value>> {
+		let addr = self.btree.insert_at(self.addr, Inserted(key, value));
 		self.btree.next_item_or_back_address(addr);
 		self.len += 1;
 	}

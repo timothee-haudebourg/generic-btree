@@ -44,6 +44,11 @@ impl<K, V> Binding<K, V> {
 	}
 
 	/// Drop the key but not the value which is assumed uninitialized.
+	/// 
+	/// ## Safety
+	/// 
+	/// The caller must ensure that the value has already been dropped,
+	/// or has been copied outside the binding and will properly be dropped later.
 	#[inline]
 	pub unsafe fn forget_value(self) {
 		let (key, value) = self.into_pair();

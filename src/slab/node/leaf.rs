@@ -1,5 +1,4 @@
 use smallvec::SmallVec;
-use std::borrow::Borrow;
 use crate::{
 	btree::{
 		self,
@@ -43,9 +42,9 @@ impl<T, S: cc_traits::SlabMut<Node<T>>> btree::node::buffer::Leaf<Storage<T, S>>
 		self.items.len()
 	}
 
-	fn item<'a>(&'a self, offset: Offset) -> Option<&'a T> where Storage<T, S>: 'a {
-		self.items.get(offset.unwrap())
-	}
+	// fn item<'a>(&'a self, offset: Offset) -> Option<&'a T> where Storage<T, S>: 'a {
+	// 	self.items.get(offset.unwrap())
+	// }
 
 	fn max_capacity(&self) -> usize {
 		M+1

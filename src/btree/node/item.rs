@@ -34,13 +34,26 @@ pub unsafe trait Read<S: StorageMut> {
 	unsafe fn read(&self) -> S::Item;
 }
 
+/// Item mutable reference that can be unsafely written to.
 pub unsafe trait Write<S: StorageMut> {
+	/// Write the item.
+	/// 
+	/// The previous value is not dropped.
+	/// 
+	/// # Safety
+	/// 
+	/// This function is unsafe because
+	/// the previous value is not dropped.
 	unsafe fn write(&mut self, item: S::Item);
 }
 
+/// Item mutable reference that can be replaced using a value of type `T`.
 pub trait Replace<S: StorageMut, T> {
 	type Output;
 
+	/// Replace the item (or part of the item) using the given value of type `T`.
+	/// 
+	/// Returns a `Self::Output` representing the replaced value.
 	fn replace(&mut self, item: T) -> Self::Output;
 }
 

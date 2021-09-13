@@ -1,7 +1,4 @@
-use super::{
-	StorageMut,
-	Offset
-};
+use super::StorageMut;
 
 /// Leaf node buffer.
 pub trait Leaf<S: StorageMut>: Default {
@@ -11,7 +8,7 @@ pub trait Leaf<S: StorageMut>: Default {
 
 	fn item_count(&self) -> usize;
 
-	fn item<'a>(&'a self, offset: Offset) -> Option<S::ItemRef<'a>> where S: 'a;
+	// fn item<'a>(&'a self, offset: Offset) -> Option<S::ItemRef<'a>> where S: 'a;
 
 	fn max_capacity(&self) -> usize;
 

@@ -67,6 +67,14 @@ mod map {
 		}
 	}
 
+	impl<'a, K, V> crate::btree::node::item::Replace<MapStorage<K, V>, V> for &'a mut Binding<K, V> {
+		type Output = V;
+
+		fn replace(&mut self, value: V) -> V {
+			self.replace_value(value)
+		}
+	}
+
 	unsafe impl<'a, K, V> crate::btree::node::item::Read<MapStorage<K, V>> for &'a Binding<K, V> {
 		unsafe fn read(&self) -> Binding<K, V> {
 			std::ptr::read(*self)
@@ -137,13 +145,21 @@ mod map {
 #[cfg(feature="slab")]
 pub use map::*;
 
-const M: usize = 8;
+/// Knuth-order of the BTree.
+const M: usize = 8; // Must be at least 4.
 
 /// Slab storage.
 pub struct Storage<T, S> {
+	/// The internal slab.
 	slab: S,
+
+	/// Root node id.
 	root: Option<usize>,
+
+	/// Size of the collection.
 	len: usize,
+
+	/// Item type.
 	item: PhantomData<T>
 }
 
