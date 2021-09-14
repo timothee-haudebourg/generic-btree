@@ -1,4 +1,4 @@
-# How to make your own BTree: Generic BTree implementation for Rust
+# How to make your own B-Tree: Generic B-Tree implementation for Rust
 
 <table><tr>
   <td><a href="https://docs.rs/generic-btree">Documentation</a></td>
@@ -6,12 +6,12 @@
   <td><a href="https://github.com/timothee-haudebourg/generic-btree">Repository</a></td>
 </tr></table>
 
-This library provides a generic BTree implementation that you can use to make your own BTree data structure.
+This library provides a generic B-Tree implementation that you can use to make your own B-Tree data structure.
 It abstracts away the tedious balancing operations and only require you to implement straight-forward node/item access functions.
 
 ## Usage
 
-A BTree is defined as a set of nodes containing an indexed list of items.
+A B-Tree is defined as a set of nodes containing an indexed list of items.
 
 ```text
                                   ┌────────────────┐
@@ -44,13 +44,13 @@ node and item references:
 
 ```rust
 impl generic_btree::Storage for MyBTree {
-	// type of reference to an item in a BTree node.
+	// type of reference to an item in a B-Tree node.
 	type ItemRef<'r> where Self: 'r = MyItemRef<'r>;
 
-	// type of reference to a BTree leaf node.
+	// type of reference to a B-Tree leaf node.
 	type LeafRef<'r> where Self: 'r = MyLeafRef<'r>;
 
-	// type of reference to an internal BTree node.
+	// type of reference to an internal B-Tree node.
 	type InternalRef<'r> where Self: 'r = MyInternalRef<'r>;
 
 	fn root(&self) -> Option<usize> {
@@ -79,7 +79,7 @@ be implemented by the storage.
 
 ## Key ordering
 
-An usual way to access a BTree is to fetch items matching a given key.
+An usual way to access a B-Tree is to fetch items matching a given key.
 To this end, this library defines a dedicated comparison trait,
 `KeyPartialOrd`, similar to the `ItemPartialOrd` trait but for key comparison. 
 This allows us to define the, for instance, the `Storage::get` function to return a reference to the item matching the provided key:
@@ -89,9 +89,9 @@ This allows us to define the, for instance, the `Storage::get` function to retur
 fn get<Q: ?Sized>(&self, key: &Q) -> Option<Self::ItemRef<'_>> where Self: KeyPartialOrd<Q>;
 ```
 
-## Mutable BTree
+## Mutable B-Tree
 
-The traits defined until now only specify how the BTree is accessed,
+The traits defined until now only specify how the B-Tree is accessed,
 but not how it is modified. This is simply done by implementing the following traits on the corresponding types:
 
 - `StorageMut`: defines how nodes are allocated, inserted and removed from the underlying storage,
