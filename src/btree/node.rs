@@ -40,6 +40,8 @@ pub enum Type {
 	Leaf
 }
 
+/// Error raised when an operation would cause
+/// a node to underflow.
 pub struct WouldUnderflow;
 
 impl Type {
@@ -52,13 +54,24 @@ impl Type {
 	}
 }
 
+/// Node reference description.
+/// 
+/// `L` Is the type of leaf node reference,
+/// while `I` is the type of internal node reference.
 pub enum Desc<L, I> {
+	/// Leaf node reference.
 	Leaf(L),
+
+	///Internal node reference.
 	Internal(I)
 }
 
+/// Node reference.
 pub struct Reference<S, L, I> {
+	/// Reference description.
 	desc: Desc<L, I>,
+
+	/// Storage type.
 	storage: PhantomData<S>
 }
 
@@ -311,6 +324,7 @@ impl<S: Storage, L: LeafRef<S>, I: InternalRef<S>> crate::dot::Display for Refer
 	}
 }
 
+/// Immutable storage node reference.
 pub type Ref<'a, S> = Reference<S, <S as Storage>::LeafRef<'a>, <S as Storage>::InternalRef<'a>>;
 
 impl<'a, S: 'a + Storage, L: LeafConst<'a, S>, I: InternalConst<'a, S>> Reference<S, L, I> {
@@ -352,6 +366,7 @@ impl<'a, S: 'a + Storage, L: LeafConst<'a, S>, I: InternalConst<'a, S>> Referenc
 	}
 }
 
+/// Mutable storage node reference.
 pub type Mut<'a, S> = Reference<S, <S as StorageMut>::LeafMut<'a>, <S as StorageMut>::InternalMut<'a>>;
 
 impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference<S, L, I> {
@@ -542,6 +557,7 @@ impl<'a, S: 'a + StorageMut, L: LeafMut<'a, S>, I: InternalMut<'a, S>> Reference
 	}
 }
 
+/// Iterator to the items of a node.
 pub enum Items<'b, S, L, I> {
 	Leaf(leaf::Items<'b, S, L>),
 	Internal(internal::Items<'b, S, I>)
@@ -559,6 +575,7 @@ impl<'b, S: 'b + Storage, L: LeafRef<S>, I: InternalRef<S>> Iterator for Items<'
 	}
 }
 
+/// Iterator to the children of a node.
 pub enum Children<'b, S, I> {
 	Leaf,
 	Internal(internal::Children<'b, S, I>)

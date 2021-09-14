@@ -19,6 +19,7 @@ use super::{
 	}
 };
 
+/// B-Tree items iterator.
 pub struct Iter<'a, S> {
 	/// BTree reference.
 	storage: &'a S,
@@ -26,8 +27,10 @@ pub struct Iter<'a, S> {
 	/// Address of the next item.
 	addr: Option<Address>,
 
+	/// Address of the iterator's end.
 	end: Option<Address>,
 
+	/// Number of items left to iterate.
 	len: usize
 }
 
@@ -95,9 +98,9 @@ impl<'a, S: Storage> DoubleEndedIterator for Iter<'a, S> {
 	}
 }
 
-/// An owning iterator over the entries of a `BTreeMap`.
+/// An owning iterator over the entries of a `Storage`.
 ///
-/// This `struct` is created by the [`into_iter`] method on [`BTreeMap`]
+/// This `struct` is created by the [`into_iter`] method on [`Storage`]
 /// (provided by the `IntoIterator` trait). See its documentation for more.
 ///
 /// [`into_iter`]: IntoIterator::into_iter
@@ -260,78 +263,10 @@ impl<S: StorageMut> DoubleEndedIterator for IntoIter<S> where for<'a> S::ItemRef
 	}
 }
 
-// pub struct IntoKeys<S> {
-// 	inner: IntoIter<S>
-// }
-
-// impl<S: Storage> IntoKeys<S> {
-// 	pub(crate) fn new(btree: S) -> Self {
-// 		Self {
-// 			inner: IntoIter::new(btree)
-// 		}
-// 	}
-// }
-
-// impl<S: StorageMut> Iterator for IntoKeys<S> {
-// 	type Item = S::Key;
-
-// 	#[inline]
-// 	fn size_hint(&self) -> (usize, Option<usize>) {
-// 		self.inner.size_hint()
-// 	}
-
-// 	#[inline]
-// 	fn next(&mut self) -> Option<S::Key> {
-// 		self.inner.next().map(|item| item.key)
-// 	}
-// }
-
-// impl<S: StorageMut> FusedIterator for IntoKeys<S> { }
-// impl<S: StorageMut> ExactSizeIterator for IntoKeys<S> { }
-
-// impl<S: StorageMut> DoubleEndedIterator for IntoKeys<S> {
-// 	#[inline]
-// 	fn next_back(&mut self) -> Option<S::Key> {
-// 		self.inner.next_back().map(|item| item.key)
-// 	}
-// }
-
-// pub struct IntoValues<S> {
-// 	inner: IntoIter<S>
-// }
-
-// impl<S: Storage> IntoValues<S> {
-// 	pub(crate) fn new(btree: S) -> Self {
-// 		Self {
-// 			inner: IntoIter::new(btree)
-// 		}
-// 	}
-// }
-
-// impl<S: StorageMut> Iterator for IntoValues<S> {
-// 	type Item = S::Value;
-
-// 	#[inline]
-// 	fn size_hint(&self) -> (usize, Option<usize>) {
-// 		self.inner.size_hint()
-// 	}
-
-// 	#[inline]
-// 	fn next(&mut self) -> Option<S::Value> {
-// 		self.inner.next().map(|item| item.value)
-// 	}
-// }
-
-// impl<S: StorageMut> FusedIterator for IntoValues<S> { }
-// impl<S: StorageMut> ExactSizeIterator for IntoValues<S> { }
-
-// impl<S: StorageMut> DoubleEndedIterator for IntoValues<S> {
-// 	#[inline]
-// 	fn next_back(&mut self) -> Option<S::Value> {
-// 		self.inner.next_back().map(|item| item.value)
-// 	}
-// }
-
+/// B-Tree mutable items iterator.
+/// 
+/// Note that it is a logical error to
+/// mutate the items in a ways that changes their relative ordering.
 pub struct IterMut<'a, S> {
 	/// BTree mutable reference.
 	storage: &'a mut S,
@@ -416,104 +351,6 @@ impl<'a, S: StorageMut> DoubleEndedIterator for IterMut<'a, S> {
 	}
 }
 
-// pub struct Keys<'a, S> {
-// 	inner: Iter<'a, S>
-// }
-
-// impl<'a, S: Storage> Keys<'a, S> {
-// 	pub(crate) fn new(storage: &'a S) -> Self {
-// 		Self {
-// 			inner: storage.iter()
-// 		}
-// 	}
-// }
-
-// impl<'a, S: Storage> FusedIterator for Keys<'a, S> { }
-// impl<'a, S: Storage> ExactSizeIterator for Keys<'a, S> { }
-
-// impl<'a, S: Storage> Iterator for Keys<'a, S> {
-// 	type Item = S::KeyRef<'a>;
-
-// 	#[inline]
-// 	fn size_hint(&self) -> (usize, Option<usize>) {
-// 		self.inner.size_hint()
-// 	}
-
-// 	#[inline]
-// 	fn next(&mut self) -> Option<Self::Item> {
-// 		self.inner.next().map(|item| item.key())
-// 	}
-// }
-
-// impl<'a, S: Storage> DoubleEndedIterator for Keys<'a, S> {
-// 	#[inline]
-// 	fn next_back(&mut self) -> Option<Self::Item> {
-// 		self.inner.next_back().map(|item| item.key())
-// 	}
-// }
-
-// pub struct Values<'a, S> {
-// 	inner: Iter<'a, S>
-// }
-
-// impl<'a, S: Storage> Values<'a, S> {
-// 	pub(crate) fn new(storage: &'a S) -> Self {
-// 		Self {
-// 			inner: storage.iter()
-// 		}
-// 	}
-// }
-
-// impl<'a, S: Storage> Iterator for Values<'a, S> {
-// 	type Item = S::ValueRef<'a>;
-
-// 	#[inline]
-// 	fn size_hint(&self) -> (usize, Option<usize>) {
-// 		self.inner.size_hint()
-// 	}
-
-// 	#[inline]
-// 	fn next(&mut self) -> Option<Self::Item> {
-// 		self.inner.next().map(|item| item.value())
-// 	}
-// }
-
-// impl<'a, S: Storage> DoubleEndedIterator for Values<'a, S> {
-// 	#[inline]
-// 	fn next_back(&mut self) -> Option<Self::Item> {
-// 		self.inner.next_back().map(|item| item.value())
-// 	}
-// }
-
-// pub struct ValuesMut<'a, S> {
-// 	inner: IterMut<'a, S>
-// }
-
-// impl<'a, S: StorageMut> ValuesMut<'a, S> {
-// 	pub(crate) fn new(storage: &'a mut S) -> Self {
-// 		Self {
-// 			inner: storage.iter_mut()
-// 		}
-// 	}
-// }
-
-// impl<'a, S: StorageMut> FusedIterator for ValuesMut<'a, S> { }
-// impl<'a, S: StorageMut> ExactSizeIterator for ValuesMut<'a, S> { }
-
-// impl<'a, S: StorageMut> Iterator for ValuesMut<'a, S> {
-// 	type Item = S::ValueMut<'a>;
-
-// 	#[inline]
-// 	fn size_hint(&self) -> (usize, Option<usize>) {
-// 		self.inner.size_hint()
-// 	}
-
-// 	#[inline]
-// 	fn next(&mut self) -> Option<Self::Item> {
-// 		self.inner.next().map(|item| item.into_value_mut())
-// 	}
-// }
-
 fn is_valid_range<T, R>(range: &R) -> bool where T: Ord + ?Sized, R: RangeBounds<T> {
 	match (range.start_bound(), range.end_bound()) {
 		(Bound::Included(start), Bound::Included(end)) => start <= end,
@@ -526,6 +363,7 @@ fn is_valid_range<T, R>(range: &R) -> bool where T: Ord + ?Sized, R: RangeBounds
 	}
 }
 
+/// Range iterator.
 pub struct Range<'a, S> {
 	/// The tree reference.
 	btree: &'a S,
@@ -613,6 +451,10 @@ impl<'a, S: Storage> DoubleEndedIterator for Range<'a, S> {
 	}
 }
 
+/// Mutable range iterator.
+/// 
+/// Note that it is a logical error to mutate the items
+/// in a ways that changes their relative ordering.
 pub struct RangeMut<'a, S> {
 	/// The tree reference.
 	btree: &'a mut S,
@@ -785,6 +627,7 @@ impl<'a, S: StorageMut> DrainFilterInner<'a, S> {
 	}
 }
 
+/// Drain filter iterator.
 pub struct DrainFilter<'a, S: StorageMut, F> where F: FnMut(S::ItemMut<'_>) -> bool {
 	pred: F,
 

@@ -1,7 +1,7 @@
 use std::fmt;
 use super::Offset;
 
-/// Item/entry location in a BTreeMap.
+/// Item/entry location in a B-Tree.
 ///
 /// Each item in a B-Tree is addressed by a node identifier and an offset in the node.
 /// We write `@id:offset` the address of the item contained in the node `id` at offset `offset`.
@@ -24,7 +24,7 @@ use super::Offset;
 /// ```
 /// 
 /// ## Validity
-/// An item adress `addr` is *valid* in a given BTreeMap if it `addr.id` refers to an existing
+/// An item adress `addr` is *valid* in a given B-Tree if it `addr.id` refers to an existing
 /// node and if `addr.offset` is comprised between `-1` and the number of items in the node (included).
 /// We say that `addr` is *occupied* if it points to an actual item
 /// (`addr.offset` at least 0 and less than the number of items in the node).

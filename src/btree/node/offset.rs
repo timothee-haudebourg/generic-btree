@@ -9,18 +9,27 @@ use std::{
 };
 
 /// Offset in a node.
+/// 
+/// An is either a positive integer (the index of an item),
+/// or "before".
+/// The "before" offset points to before the first item of the node.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Offset(usize);
 
 impl Offset {
+	/// The "before" offset.
 	pub fn before() -> Offset {
 		Offset(usize::MAX)
 	}
 
+	/// Checks if this is the "before" offset.
 	pub fn is_before(&self) -> bool {
 		self.0 == usize::MAX
 	}
 
+	/// Get the integer value of this offset is any.
+	/// 
+	/// Returns `None` if this is the "before" offset.
 	pub fn value(&self) -> Option<usize> {
 		if self.0 == usize::MAX {
 			None
@@ -29,6 +38,9 @@ impl Offset {
 		}
 	}
 
+	/// Turns this offset into its integer value.
+	/// 
+	/// Panics if this is the "before" offset.
 	pub fn unwrap(self) -> usize {
 		if self.0 == usize::MAX {
 			panic!("Offset out of bounds")
@@ -37,6 +49,10 @@ impl Offset {
 		}
 	}
 
+	/// Increment the offset by one.
+	/// 
+	/// The "before" offset is turned into
+	/// the offset 0.
 	pub fn incr(&mut self) {
 		if self.0 == usize::MAX {
 			self.0 = 0
@@ -45,11 +61,15 @@ impl Offset {
 		}
 	}
 
+	/// Decrement the offset by one.
+	/// 
+	/// The offset 0 becomes the "before" offset.
+	/// The "before" offset is unchanged.
 	pub fn decr(&mut self) {
-		if self.0 == 0 {
-			self.0 = usize::MAX
-		} else {
-			self.0 -= 1
+		self.0 = match self.0 {
+			0 => usize::MAX,
+			usize::MAX => usize::MAX,
+			_ => self.0 - 1
 		}
 	}
 }

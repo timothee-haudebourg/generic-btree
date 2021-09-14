@@ -1,15 +1,13 @@
 use std::marker::PhantomData;
 use super::StorageMut;
 
-/// Internal node buffer.
+/// Internal buffer node.
 pub trait Internal<S: StorageMut>: Default {
 	fn parent(&self) -> Option<usize>;
 
 	fn set_parent(&mut self, parent: Option<usize>);
 
 	fn item_count(&self) -> usize;
-
-	// fn item<'r>(&'r self, offset: Offset) -> Option<S::ItemRef<'r>> where S: 'r;
 
 	fn child_count(&self) -> usize {
 		self.item_count() + 1usize

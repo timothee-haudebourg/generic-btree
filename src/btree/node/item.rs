@@ -4,13 +4,19 @@ use super::{
 	Offset
 };
 
+/// Type that can access an item by offset.
+/// 
+/// This is the most abstract way of accessing an item.
 pub trait ItemAccess<S: Storage> {
+	/// Returns the number of items in the node.
 	fn item_count(&self) -> usize;
 
+	/// Checks if the node is empty.
 	fn is_empty(&self) -> bool {
 		self.item_count() == 0
 	}
 
+	/// Borrow the item at the given offset, if any.
 	fn borrow_item(&self, offset: Offset) -> Option<S::ItemRef<'_>>;
 }
 

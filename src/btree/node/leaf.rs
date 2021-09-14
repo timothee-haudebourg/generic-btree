@@ -68,7 +68,11 @@ pub trait LeafRef<S: Storage>: ItemAccess<S> {
 	}
 }
 
-/// Leaf node reference.
+/// Leaf node immutable reference.
+/// 
+/// Since an immutable reference is also a reference,
+/// implementing this trait requires implementing the
+/// [`LeafRef`] trait.
 pub trait LeafConst<'a, S: 'a + Storage>: LeafRef<S> {
 	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
 
@@ -88,16 +92,25 @@ pub trait LeafConst<'a, S: 'a + Storage>: LeafRef<S> {
 	}
 }
 
+/// Mutable leaf reference.
+/// 
+/// Since a mutable reference is also a reference,
+/// implementing this trait requires implementing the
+/// [`LeafRef`] trait.
 pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<S> {
+	/// Sets the parent node id.
 	fn set_parent(&mut self, parent: Option<usize>);
 
 	/// Returns a mutable reference to the item with the given offset in the node.
 	fn item_mut(&mut self, offset: Offset) -> Option<S::ItemMut<'_>>;
 
+	/// Turns this node reference int a mutable reference to the item at the given offset.
 	fn into_item_mut(self, offset: Offset) -> Option<S::ItemMut<'a>>;
 
+	/// Inserts an item at the given offset in the node.
 	fn insert(&mut self, offset: Offset, item: S::Item);
 
+	/// Removes and returns the item at the given offset.
 	fn remove(&mut self, offset: Offset) -> S::Item;
 
 	#[inline]
@@ -106,6 +119,9 @@ pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<S> {
 		self.remove(offset)
 	}
 
+	/// Replaces the item at the given offset.
+	/// 
+	/// Returns the old item.
 	fn replace(&mut self, offset: Offset, item: S::Item) -> S::Item {
 		self.item_mut(offset).unwrap().replace(item)
 	}
@@ -115,6 +131,7 @@ pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<S> {
 	/// Returns the offset of the separator.
 	fn append(&mut self, separator: S::Item, other: S::LeafNode) -> Offset;
 
+	/// Returns a mutable reference to the item matching the given key in this node, if any.
 	#[inline]
 	fn get_mut<Q: ?Sized>(self, key: &Q) -> Option<S::ItemMut<'a>> where S: KeyPartialOrd<Q> {
 		match binary_search_min(&self, key) {
@@ -130,6 +147,13 @@ pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<S> {
 		}
 	}
 
+	/// Split the node.
+	/// 
+	/// Returns a tuple (len, item, node) where
+	/// `len` is the number of item left in the node,
+	/// `item` is the pivot item around which the node has been split and
+	/// `node` an a new leaf node containing all the items
+	/// removed from the right of the pivot item.
 	#[inline]
 	fn split(&mut self) -> (usize, S::Item, S::LeafNode) {
 		use crate::btree::node::buffer::Leaf;
@@ -165,6 +189,7 @@ pub trait LeafMut<'a, S: 'a + StorageMut>: Sized + LeafRef<S> {
 	}
 }
 
+/// Iterator to the items of a leaf node.
 pub struct Items<'b, S, R: ?Sized> {
 	node: &'b R,
 	offset: Offset,

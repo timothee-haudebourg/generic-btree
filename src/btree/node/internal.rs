@@ -103,6 +103,11 @@ pub trait InternalRef<S: Storage>: ItemAccess<S> {
 	}
 }
 
+/// Immutable internal node reference.
+/// 
+/// Since an immutable reference is also a reference,
+/// implementing this trait requires implementing the
+/// [`InternalRef`] trait.
 pub trait InternalConst<'a, S: 'a + Storage>: InternalRef<S> {
 	fn item(&self, offset: Offset) -> Option<S::ItemRef<'a>>;
 
@@ -139,18 +144,33 @@ pub trait InternalConst<'a, S: 'a + Storage>: InternalRef<S> {
 	}
 }
 
+/// Mutable internal node reference.
+/// 
+/// Since a mutable reference is also a reference,
+/// implementing this trait requires implementing the
+/// [`InternalRef`] trait.
 pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<S> {
+	/// Sets the identifier of the parent node.
 	fn set_parent(&mut self, parent: Option<usize>);
 
+	/// Sets the identifier of the first child node.
 	fn set_first_child_id(&mut self, id: usize);
 
 	/// Returns a mutable reference to the item with the given offset in the node.
 	fn into_item_mut(self, offset: Offset) -> Option<S::ItemMut<'a>>;
 
+	/// Inserts an item at the given offset in the node,
+	/// separated with the next item by the given child node.
 	fn insert(&mut self, offset: Offset, item: S::Item, right_child_id: usize);
 
+	/// Removes the item at the given offset and the reference to its right child.
+	/// 
+	/// Returns the item and the identifier of the right child.
 	fn remove(&mut self, offset: Offset) -> (S::Item, usize);
 
+	/// Replaces the item at the given offset.
+	/// 
+	/// Returns the old item.
 	fn replace(&mut self, offset: Offset, item: S::Item) -> S::Item;
 
 	/// Appends the separator and all the branches of `other` into this node.
@@ -158,6 +178,10 @@ pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<S> {
 	/// Returns the offset of the separator.
 	fn append(&mut self, separator: S::Item, other: S::InternalNode) -> Offset;
 
+	/// Returns a mutable reference to the item matching the given key in this node.
+	/// 
+	/// If no item in the node matches the given key,
+	/// returns the id of the child node that may contain such item.
 	#[inline]
 	fn get_mut<Q: ?Sized>(self, key: &Q) -> Result<S::ItemMut<'a>, usize> where S: KeyPartialOrd<Q> {
 		match binary_search_min(&self, key) {
@@ -174,6 +198,13 @@ pub trait InternalMut<'a, S: 'a + StorageMut>: Sized + InternalRef<S> {
 		}
 	}
 
+	/// Split the node.
+	/// 
+	/// Returns a tuple (len, item, node) where
+	/// `len` is the number of item left in the node,
+	/// `item` is the pivot item around which the node has been split and
+	/// `node` an a new internal node containing all the items
+	/// removed from the right of the pivot item.
 	#[inline]
 	fn split(&mut self) -> (usize, S::Item, S::InternalNode) {
 		use crate::btree::node::buffer::Internal;
