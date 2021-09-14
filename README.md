@@ -32,10 +32,10 @@ A BTree is defined as a set of nodes containing an indexed list of items.
 This library tries to make the minimal assumptions on the internal data structure by defining a collection of traits that must be implemented:
 
 - `Storage`: defines how nodes are stored and accessed,
-- `InternalRef`: defines how internal nodes are accessed,
-- `LeafRef`: defines how leaf nodes are accessed,
-- `ItemRef`: defines how items are accessed.
+- `InternalConst`: defines how internal nodes are accessed,
+- `LeafConst`: defines how leaf nodes are accessed,
 
+In addition an `ItemRef` type must be defined that represent a reference to an item in a node.
 Each item in the tree is identified by an `Address` composed
 of a node id, and an item index in the node.
 The `Storage` trait provides the necessary functions to
