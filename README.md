@@ -68,7 +68,7 @@ impl generic_btree::Storage for MyBTree {
 }
 ```
 
-## Items ordering
+### Items ordering
 
 Up until now, no order between items has been defined.
 Since there is no concrete types for items because they are
@@ -77,19 +77,19 @@ the standard `PartialOrd` trait cannot be used to define such order.
 Instead, this library defines the `ItemPartialOrd` trait that must
 be implemented by the storage.
 
-## Key ordering
+### Key ordering
 
 An usual way to access a B-Tree is to fetch items matching a given key.
 To this end, this library defines a dedicated comparison trait,
 `KeyPartialOrd`, similar to the `ItemPartialOrd` trait but for key comparison. 
-This allows us to define the, for instance, the `Storage::get` function to return a reference to the item matching the provided key:
+This allows us to define, for instance, the `Storage::get` function to return a reference to the item matching the provided key:
 
 ```rust
 /// Returns a reference to the item identified by the supplied key.
 fn get<Q: ?Sized>(&self, key: &Q) -> Option<Self::ItemRef<'_>> where Self: KeyPartialOrd<Q>;
 ```
 
-## Mutable B-Tree
+### Mutable B-Tree
 
 The traits defined until now only specify how the B-Tree is accessed,
 but not how it is modified. This is simply done by implementing the following traits on the corresponding types:
